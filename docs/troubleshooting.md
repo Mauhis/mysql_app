@@ -77,3 +77,15 @@ removed, Python and connector versions, and whether the server is local or
 remote. Include the server version if available. Do not include passwords or
 other credentials. State whether the automated tests pass and whether the issue
 occurs against a live server; mocked tests cannot establish server compatibility.
+
+## Modification and deletion
+
+- Permission errors: the account needs ALTER for changes and DROP for deletion.
+- Unknown character set or incompatible collation: supply a matching pair supported
+  by the connected server; the app forwards the server's error.
+- System database protection: use an application database, not a MySQL system schema.
+- Cancellation: confirmation is case-sensitive and exact, including spaces.
+- Existing tables retain their settings after modification: option 3 changes only
+  database defaults, not existing table definitions or stored data.
+- Connection lost during a change: reconnect and inspect the database before
+  retrying. The server may have completed the operation before the connection failed.

@@ -34,7 +34,7 @@ def main():
 
         # Reuse the connection until the user exits or interrupts the program.
         while True:
-            print("\n1. List databases\n2. Create database\n0. Exit")
+            print("\n1. List databases\n2. Create database\n3. Modify database defaults\n4. Delete database\n0. Exit")
             choice = input("Choose an option: ").strip()
             try:
                 if choice == "1":
@@ -45,11 +45,36 @@ def main():
                     name = input("New database name: ").strip()
                     db.create_database(name)
                     print(f"Database '{name}' created successfully.")
+                elif choice in ("3", "4"):
+                    name = input("Existing database name: ").strip()
+                    db.validate_database_name(name, protect_system=True)
+                    if name not in db.list_databases():
+                        raise ValueError("Choose an exact database name from the database list.")
+                    if choice == "3":
+                        print("Changes defaults for new tables only; existing tables and data are not converted.")
+                        charset = input("New character set (e.g. utf8mb4): ").strip()
+                        collation = input("New collation (e.g. utf8mb4_unicode_ci): ").strip()
+                        print(f"Change '{name}' to character set '{charset}' and collation '{collation}'.")
+                        confirmation = input("Type MODIFY to apply, or anything else to cancel: ")
+                        if confirmation != "MODIFY":
+                            print("Modification cancelled.")
+                            continue
+                        db.modify_database(name, charset, collation)
+                        print(f"Database '{name}' defaults updated successfully.")
+                    else:
+                        # Require an exact phrase to avoid accidental permanent deletion.
+                        print(f"Permanently delete '{name}' and all its tables and data. This cannot be undone by the app.")
+                        confirmation = input(f"Type DELETE {name} to confirm, or anything else to cancel: ")
+                        if confirmation != f"DELETE {name}":
+                            print("Deletion cancelled.")
+                            continue
+                        db.delete_database(name)
+                        print(f"Database '{name}' deleted successfully.")
                 elif choice == "0":
                     # Returning still runs the finally block that closes the connection.
                     return 0
                 else:
-                    print("Choose 1, 2, or 0.")
+                    print("Choose 1, 2, 3, 4, or 0.")
             except (ValueError, RuntimeError, mysql.connector.Error) as err:
                 # Show validation/connection/SQL errors and let the user try again.
                 print(f"Operation failed: {err}")

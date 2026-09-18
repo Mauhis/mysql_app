@@ -76,6 +76,27 @@ Checks that a connection exists and `is_connected()` is true, then returns a
 new cursor. Raises `RuntimeError` if disconnected. Public operations use this
 helper; callers should not need it.
 
+## Modification and deletion API
+
+`validate_database_name(name, protect_system=False)` validates the shared name
+rule. When protection is enabled, the four standard MySQL system databases are
+rejected case-insensitively with `ValueError`.
+
+`modify_database(name, charset, collation)` executes `ALTER DATABASE` to change
+both defaults. Option strings must begin with an ASCII letter and contain only
+ASCII letters, digits, or underscores, up to 64 characters. MySQL checks support
+and compatibility. Existing tables and data are not converted.
+
+`delete_database(name)` executes `DROP DATABASE` without `IF EXISTS`, so a missing
+database raises a server error. This permanently removes the database contents.
+
+Both methods validate identifiers and protect system databases before opening a
+cursor. Disconnected operations raise `RuntimeError`; connector errors propagate,
+and cursors close on success or failure. They do not prompt: programmatic callers
+must obtain their own confirmation. The CLI checks visibility and requires exact
+confirmation before calling either method. The server remains authoritative if a
+database disappears between the visibility check and execution.
+
 ## Reusing the manager
 
 Run this example from the project directory after installing requirements. It
@@ -126,7 +147,8 @@ From the project directory, with the virtual environment activated:
 python -m unittest discover -s tests -v
 ```
 
-The seven tests in `tests/test_connection_manager.py` use `unittest` and mocks.
+The tests in `tests/test_connection_manager.py` and
+`tests/test_database_changes.py` use `unittest` and mocks.
 They cover:
 
 - SQL construction for a valid database name.
@@ -139,8 +161,8 @@ They cover:
 - Cleanup of the old connection when a replacement connection attempt fails.
 
 No test requires credentials or contacts a real MySQL server. These tests do not
-validate authentication, server permissions, server compatibility, terminal
-behavior, or the interactive menu. The requirements file specifies a dependency
+validate authentication, server permissions, server compatibility, real terminal behavior. Menu tests mock user input and verify confirmation,
+cancellation, and interruption. The requirements file specifies a dependency
 range rather than an exact lock; record the installed connector version when
 reporting version-specific behavior.
 
@@ -158,8 +180,8 @@ database. Database creation persists after the application exits.
 7. Exit with **0**, restart, and check Ctrl+C exits cleanly.
 8. Separately try incorrect connection details and confirm a connection error.
 
-The app has no delete command. If cleanup is needed, remove only the disposable
-database using your usual administration tool after verifying its name.
+For cleanup, select **4**, enter the disposable database name, and confirm the
+exact deletion phrase after verifying the target.
 
 ## Extending the application
 
@@ -174,3 +196,10 @@ connection security options, and adding non-interactive commands. Each requires
 implementation and documentation; none is currently available. Any future
 non-interactive interface should define exit statuses for failed operations
 instead of relying on the current menu's successful exit status.
+
+Additional manual checks: modify a disposable database's defaults with option 3,
+check cancellation before trying `MODIFY`, and inspect the resulting defaults with
+your administration tool. Try an incompatible charset/collation and verify an
+error. Cancel deletion once before confirming deletion of the disposable database,
+then list databases to verify removal. Mock tests cover these control paths but
+do not verify behavior against a live server.

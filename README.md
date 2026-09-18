@@ -1,7 +1,8 @@
 # MySQL Database Creator
 
 An interactive Python command-line application for connecting to an existing
-MySQL server, listing visible databases, and creating empty databases.
+MySQL server, listing visible databases, creating empty databases, changing database defaults,
+and deleting databases.
 
 ## Contents
 
@@ -23,7 +24,7 @@ MySQL server, listing visible databases, and creating empty databases.
 - The `mysql-connector-python` dependency declared in `requirements.txt`.
 
 The application does not install or start MySQL. It creates empty databases;
-it does not create tables, manage records, run migrations, or delete databases.
+it does not create tables, manage records, run migrations, or rename databases.
 There is no graphical interface or web server.
 
 ## Installation
@@ -81,6 +82,8 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 ```text
 1. List databases
 2. Create database
+3. Modify database defaults
+4. Delete database
 0. Exit
 ```
 
@@ -91,7 +94,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
   Successful creation prints a confirmation and returns to the menu.
 - **0 — Exit:** closes the connection and ends the program.
 
-Other choices print `Choose 1, 2, or 0.` and return to the menu. Operation errors
+Other choices print `Choose 1, 2, 3, 4, or 0.` and return to the menu. Operation errors
 print `Operation failed:` and allow another choice. There is no automatic
 reconnect; if the connection is lost, exit and restart the application.
 
@@ -110,6 +113,8 @@ Connected successfully.
 
 1. List databases
 2. Create database
+3. Modify database defaults
+4. Delete database
 0. Exit
 Choose an option: 2
 New database name: demo_app
@@ -117,6 +122,8 @@ Database 'demo_app' created successfully.
 
 1. List databases
 2. Create database
+3. Modify database defaults
+4. Delete database
 0. Exit
 Choose an option: 0
 ```
@@ -148,8 +155,7 @@ CREATE DATABASE `demo_app` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 ```
 
 Creation takes effect immediately; exiting does not undo it. Existing names
-produce a server error because the app does not use `IF NOT EXISTS`. No overwrite
-or deletion operation is provided. Database name case behavior is determined by
+produce a server error because the app does not use `IF NOT EXISTS`. Creation never overwrites an existing database. Database name case behavior is determined by
 the server; the app preserves the entered case.
 
 ## Project layout
@@ -180,3 +186,25 @@ Tests mock the connector and do not require a running MySQL server. See the
 
 This project's code is available under the [MIT License](LICENSE). Dependencies
 retain their own licenses.
+
+## Modify or delete existing databases
+
+Use **1** to find the exact name, then **3** to change defaults or **4** to delete.
+Both operations require a visible database with a name satisfying the app's naming
+rule. The app blocks changes to `mysql`, `sys`, `information_schema`, and
+`performance_schema`, including case variants.
+
+**Modify:** enter a character set and matching collation supported by your server
+(for example, `utf8mb4` and `utf8mb4_unicode_ci`). Review the proposed values and
+type `MODIFY` exactly to apply them. Any other response cancels. Both values are
+required. The server rejects unknown or incompatible values. This changes the
+database defaults used by new tables; it does not rename the database or convert
+existing tables or data. See the [MySQL ALTER DATABASE reference](https://dev.mysql.com/doc/refman/8.0/en/alter-database.html)
+and [database character set documentation](https://dev.mysql.com/doc/refman/8.0/en/charset-database.html).
+
+**Delete:** review the target and type `DELETE database_name` exactly, substituting
+the displayed name. Any other response cancels. Deletion permanently removes the
+database and its tables and data; the app cannot undo it. Back up needed data first.
+
+The account needs ALTER permission for modification and DROP permission for
+deletion. Server errors return you to the menu. Changes take effect immediately.
