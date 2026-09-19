@@ -4,10 +4,11 @@
 
 ## Architecture
 
-`main.py` owns terminal interaction: it gathers credentials, validates the port,
+`cli.py` owns terminal interaction: it gathers credentials, validates the port,
 connects once, and dispatches menu operations. It catches expected operation
 errors so the menu can continue, and calls `close()` in a `finally` block.
-The `if __name__ == "__main__"` guard allows importing it without starting prompts.
+`main.py` is the executable entry point and delegates to `run_application()`.
+Its `if __name__ == "__main__"` guard allows importing it without starting prompts.
 
 `ConnManager.py` owns the connector connection and SQL execution. It does not
 prompt, print, or suppress database errors. Each database operation opens a
@@ -133,10 +134,11 @@ finally:
 `1..65535`; blank input selects `3306`. It returns an integer. Input interruption
 propagates to the outer `main()` handler.
 
-`main()` runs the interactive session and returns `0` after a menu exit or
+`run_application()` runs the interactive session and returns `0` after a menu exit or
 handled `KeyboardInterrupt`/`EOFError`, and `1` after an initial connector error.
 Expected errors inside the menu are displayed without terminating the loop.
-`SystemExit(main())` translates the return value to the process exit status.
+`main()` delegates to it, and `SystemExit(main())` translates the return value to
+the process exit status.
 Cleanup errors and other unexpected exceptions can still propagate.
 
 ## Automated verification
@@ -185,7 +187,8 @@ exact deletion phrase after verifying the target.
 
 ## Extending the application
 
-Keep prompts in `main.py` and reusable database logic in `ConnectionManager`.
+Keep prompts in `cli.py`, the executable entry point in `main.py`, and reusable
+database logic in `ConnectionManager.py`.
 For new operations, close cursors on both success and failure, propagate useful
 errors to callers, and test failure behavior as well as successful execution.
 Use connector parameter binding for data values and deliberate validation for

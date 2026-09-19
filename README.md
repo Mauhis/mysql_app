@@ -163,7 +163,8 @@ the server; the app preserves the entered case.
 ```text
 mysql_app/
 ├── ConnManager.py                 # Reusable connection and database operations
-├── main.py                        # Interactive prompts, menu, and entry point
+├── cli.py                         # Interactive prompts and menu workflow
+├── main.py                        # Minimal executable entry point
 ├── requirements.txt               # MySQL connector dependency range
 ├── tests/test_connection_manager.py
 ├── docs/

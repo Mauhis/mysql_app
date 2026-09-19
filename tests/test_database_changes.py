@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import mysql.connector
 
 from ConnManager import ConnectionManager
-from main import main
+from cli import run_application
 
 
 class DatabaseChangeTests(unittest.TestCase):
@@ -61,12 +61,12 @@ class DatabaseChangeTests(unittest.TestCase):
 
 class MenuChangeTests(unittest.TestCase):
     def run_menu(self, answers):
-        with patch('main.ConnectionManager') as manager_class, \
+        with patch('cli.ConnectionManager') as manager_class, \
                 patch('builtins.input', side_effect=['', '', '', *answers]), \
-                patch('main.getpass', return_value='secret'), patch('builtins.print'):
+                patch('cli.getpass', return_value='secret'), patch('builtins.print'):
             manager = manager_class.return_value
             manager.list_databases.return_value = ['example']
-            self.assertEqual(main(), 0)
+            self.assertEqual(run_application(), 0)
             manager.close.assert_called_once()
             return manager
 
