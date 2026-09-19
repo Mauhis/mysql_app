@@ -28,16 +28,31 @@ class ConnectionManager:
         # A cursor sends SQL statements and reads their result rows.
         return self.connection.cursor()
 
-    def list_databases(self):
-        """Return visible database names and close the cursor on success or failure."""
+    def _execute(self, statement, *, fetch=False):
+        """Execute one statement, always releasing its cursor afterward."""
         cursor = self._cursor()
         try:
-            cursor.execute("SHOW DATABASES")
-            # Each result row is a tuple like ('my_database',); take its first value.
-            return [row[0] for row in cursor.fetchall()]
+            cursor.execute(statement)
+            return cursor.fetchall() if fetch else None
         finally:
-            # finally runs even if executing SQL or reading the results fails.
             cursor.close()
+
+    @staticmethod
+    def _validate_sql_name(value, label):
+        """Validate a character-set or collation token used in generated SQL."""
+        if not isinstance(value, str) or not re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9_]{0,63}", value
+        ):
+            raise ValueError(
+                f"{label} must be 1–64 ASCII letters, digits, or underscores, "
+                "starting with a letter."
+            )
+
+    def list_databases(self):
+        """Return visible database names and close the cursor on success or failure."""
+        rows = self._execute("SHOW DATABASES", fetch=True)
+        # Each result row is a tuple like ('my_database',); take its first value.
+        return [row[0] for row in rows]
 
     def create_database(self, name):
         """Create an empty utf8mb4 database from a restricted ASCII identifier.
@@ -46,24 +61,20 @@ class ConnectionManager:
         server errors propagate; existing databases are never overwritten.
         """
         self.validate_database_name(name)
-        cursor = self._cursor()
-        try:
-            # utf8mb4 supports Unicode; the collation sets text comparison rules.
-            # Backticks quote the validated database name as an SQL identifier.
-            cursor.execute(
-                f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 "
-                "COLLATE utf8mb4_unicode_ci"
-            )
-        finally:
-            # Release the cursor while keeping the server connection open for reuse.
-            cursor.close()
+        # Backticks quote the validated database name as an SQL identifier.
+        self._execute(
+            f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 "
+            "COLLATE utf8mb4_unicode_ci"
+        )
 
     @staticmethod
     def validate_database_name(name, protect_system=False):
         """Validate an identifier and optionally reject MySQL's system databases."""
         # SQL parameters cannot represent identifiers. Restrict names before quoting.
         # The pattern requires a letter/underscore, then up to 63 allowed characters.
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", name):
+        if not isinstance(name, str) or not re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]{0,63}", name
+        ):
             raise ValueError(
                 "Use 1–64 letters, digits, or underscores; "
                 "start with a letter or underscore."
@@ -71,33 +82,26 @@ class ConnectionManager:
         if protect_system and name.lower() in {
             "mysql", "information_schema", "performance_schema", "sys"
         }:
-            raise ValueError("System databases cannot be modified or deleted by this app.")
+            raise ValueError(
+                "System databases cannot be modified or deleted by this app."
+            )
 
     def delete_database(self, name):
         """Permanently drop a database. Callers are responsible for confirmation."""
         self.validate_database_name(name, protect_system=True)
-        cursor = self._cursor()
-        try:
-            # No IF EXISTS: a missing database should report an error to the caller.
-            cursor.execute(f"DROP DATABASE `{name}`")
-        finally:
-            cursor.close()
+        # No IF EXISTS: a missing database should report an error to the caller.
+        self._execute(f"DROP DATABASE `{name}`")
 
     def modify_database(self, name, charset, collation):
         """Change database defaults without converting existing tables or data."""
         self.validate_database_name(name, protect_system=True)
         # These SQL tokens are also interpolated, so reject punctuation and spaces.
         for label, value in (("Character set", charset), ("Collation", collation)):
-            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", value):
-                raise ValueError(f"{label} must be 1–64 ASCII letters, digits, or underscores, starting with a letter.")
-        cursor = self._cursor()
-        try:
-            # MySQL validates that the names exist and the collation matches the charset.
-            cursor.execute(
-                f"ALTER DATABASE `{name}` CHARACTER SET {charset} COLLATE {collation}"
-            )
-        finally:
-            cursor.close()
+            self._validate_sql_name(value, label)
+        # MySQL validates that the names exist and the collation matches the charset.
+        self._execute(
+            f"ALTER DATABASE `{name}` CHARACTER SET {charset} COLLATE {collation}"
+        )
 
     def close(self):
         """Close and clear the connection; safe to call again after cleanup."""
