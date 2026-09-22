@@ -1,11 +1,10 @@
-"""Reusable MySQL server connection and database creation operations."""
+"""MySQL connection lifecycle and shared SQL execution."""
 
-import re
 import mysql.connector
 
 
 class ConnectionManager:
-    """Manage a server connection and database operations."""
+    """Own a server connection and release cursors after executing SQL."""
 
     def __init__(self):
         # None means no server connection has been opened yet.
@@ -28,7 +27,7 @@ class ConnectionManager:
         # A cursor sends SQL statements and reads their result rows.
         return self.connection.cursor()
 
-    def _execute(self, statement, *, fetch=False):
+    def execute(self, statement, *, fetch=False):
         """Execute one statement, always releasing its cursor afterward."""
         cursor = self._cursor()
         try:
@@ -36,72 +35,6 @@ class ConnectionManager:
             return cursor.fetchall() if fetch else None
         finally:
             cursor.close()
-
-    @staticmethod
-    def _validate_sql_name(value, label):
-        """Validate a character-set or collation token used in generated SQL."""
-        if not isinstance(value, str) or not re.fullmatch(
-            r"[A-Za-z][A-Za-z0-9_]{0,63}", value
-        ):
-            raise ValueError(
-                f"{label} must be 1–64 ASCII letters, digits, or underscores, "
-                "starting with a letter."
-            )
-
-    def list_databases(self):
-        """Return visible database names and close the cursor on success or failure."""
-        rows = self._execute("SHOW DATABASES", fetch=True)
-        # Each result row is a tuple like ('my_database',); take its first value.
-        return [row[0] for row in rows]
-
-    def create_database(self, name):
-        """Create an empty utf8mb4 database from a restricted ASCII identifier.
-
-        Invalid string names raise ValueError before SQL is sent. Connection and
-        server errors propagate; existing databases are never overwritten.
-        """
-        self.validate_database_name(name)
-        # Backticks quote the validated database name as an SQL identifier.
-        self._execute(
-            f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 "
-            "COLLATE utf8mb4_unicode_ci"
-        )
-
-    @staticmethod
-    def validate_database_name(name, protect_system=False):
-        """Validate an identifier and optionally reject MySQL's system databases."""
-        # SQL parameters cannot represent identifiers. Restrict names before quoting.
-        # The pattern requires a letter/underscore, then up to 63 allowed characters.
-        if not isinstance(name, str) or not re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_]{0,63}", name
-        ):
-            raise ValueError(
-                "Use 1–64 letters, digits, or underscores; "
-                "start with a letter or underscore."
-            )
-        if protect_system and name.lower() in {
-            "mysql", "information_schema", "performance_schema", "sys"
-        }:
-            raise ValueError(
-                "System databases cannot be modified or deleted by this app."
-            )
-
-    def delete_database(self, name):
-        """Permanently drop a database. Callers are responsible for confirmation."""
-        self.validate_database_name(name, protect_system=True)
-        # No IF EXISTS: a missing database should report an error to the caller.
-        self._execute(f"DROP DATABASE `{name}`")
-
-    def modify_database(self, name, charset, collation):
-        """Change database defaults without converting existing tables or data."""
-        self.validate_database_name(name, protect_system=True)
-        # These SQL tokens are also interpolated, so reject punctuation and spaces.
-        for label, value in (("Character set", charset), ("Collation", collation)):
-            self._validate_sql_name(value, label)
-        # MySQL validates that the names exist and the collation matches the charset.
-        self._execute(
-            f"ALTER DATABASE `{name}` CHARACTER SET {charset} COLLATE {collation}"
-        )
 
     def close(self):
         """Close and clear the connection; safe to call again after cleanup."""

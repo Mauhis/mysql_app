@@ -5,11 +5,14 @@ from getpass import getpass
 import mysql.connector
 
 from ConnManager import ConnectionManager
+from database_operations import DatabaseOperations
+from table_operations import TableOperations
+from validation import validate_identifier
 
 
 MENU = (
     "\n1. List databases\n2. Create database\n"
-    "3. Modify database defaults\n4. Delete database\n0. Exit"
+    "3. Modify database defaults\n4. Delete database\n5. Create table\n0. Exit"
 )
 
 
@@ -34,7 +37,7 @@ def connect_to_server(db):
 def read_existing_database(db):
     """Return a validated, visible database selected by the user."""
     name = input("Existing database name: ").strip()
-    db.validate_database_name(name, protect_system=True)
+    validate_identifier(name, protect_system=True)
     if name not in db.list_databases():
         raise ValueError("Choose an exact database name from the database list.")
     return name
@@ -51,6 +54,27 @@ def create_database(db):
     name = input("New database name: ").strip()
     db.create_database(name)
     print(f"Database '{name}' created successfully.")
+
+
+def create_table(db, tables):
+    """Collect columns and create a table in an existing database."""
+    database = read_existing_database(db)
+    name = input("New table name: ").strip()
+    columns = {}
+    print(
+        "Types: INT, BIGINT, FLOAT, DOUBLE, BOOLEAN, DATE, DATETIME, "
+        "TIMESTAMP, TEXT, VARCHAR(n), DECIMAL(p, s)."
+    )
+    while True:
+        column = input("Column name (blank to finish): ").strip()
+        if not column:
+            break
+        if column.lower() in {existing.lower() for existing in columns}:
+            raise ValueError("Column names must be unique regardless of case.")
+        columns[column] = input("Column type: ").strip()
+    primary_key = input("Primary key column (blank for none): ").strip() or None
+    tables.create_table(database, name, columns, primary_key=primary_key)
+    print(f"Table '{database}.{name}' created successfully.")
 
 
 def modify_database(db):
@@ -90,31 +114,32 @@ def delete_database(db):
     print(f"Database '{name}' deleted successfully.")
 
 
-def handle_menu_choice(db, choice):
+def handle_menu_choice(db, tables, choice):
     """Run one menu action; return False when the application should exit."""
     actions = {
         "1": list_databases,
         "2": create_database,
         "3": modify_database,
         "4": delete_database,
+        "5": lambda db: create_table(db, tables),
     }
     if choice == "0":
         return False
     action = actions.get(choice)
     if action is None:
-        print("Choose 1, 2, 3, 4, or 0.")
+        print("Choose 1, 2, 3, 4, 5, or 0.")
     else:
         action(db)
     return True
 
 
-def run_menu(db):
+def run_menu(db, tables):
     """Run menu actions until the user chooses to exit."""
     while True:
         print(MENU)
         choice = input("Choose an option: ").strip()
         try:
-            if not handle_menu_choice(db, choice):
+            if not handle_menu_choice(db, tables, choice):
                 return
         except (ValueError, RuntimeError, mysql.connector.Error) as err:
             print(f"Operation failed: {err}")
@@ -122,12 +147,14 @@ def run_menu(db):
 
 def run_application():
     """Run the CLI, clean up its connection, and return an exit status."""
-    db = ConnectionManager()
+    manager = ConnectionManager()
+    db = DatabaseOperations(manager)
+    tables = TableOperations(manager)
     try:
         print("MySQL Database Creator")
-        connect_to_server(db)
+        connect_to_server(manager)
         print("Connected successfully.")
-        run_menu(db)
+        run_menu(db, tables)
         return 0
     except mysql.connector.Error as err:
         print(f"Connection failed: {err}")
@@ -136,4 +163,4 @@ def run_application():
         print("\nExiting.")
         return 0
     finally:
-        db.close()
+        manager.close()

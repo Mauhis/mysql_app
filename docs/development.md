@@ -13,6 +13,9 @@ Its `if __name__ == "__main__"` guard allows importing it without starting promp
 `ConnManager.py` owns the connector connection and SQL execution. It does not
 prompt, print, or suppress database errors. Each database operation opens a
 cursor and closes it in `finally`. The caller owns connection cleanup.
+`DatabaseOperations` and `TableOperations` receive the same manager and build
+their SQL in `database_operations.py` and `table_operations.py`. Shared name
+validation lives in `validation.py`. These classes do not own or close the connection.
 
 The application connects at server level without choosing a default database.
 Creating a database does not select it for later queries. There is no connection
@@ -40,14 +43,14 @@ Programmatic callers should provide appropriate connector argument types and
 values. Reconnecting replaces the existing session, even if the new connection
 attempt subsequently fails.
 
-### `list_databases()`
+### `DatabaseOperations(manager).list_databases()`
 
 Executes `SHOW DATABASES` and returns a list of database name strings visible to
 the account. The app performs no additional sorting or filtering. Raises
 `RuntimeError` when no live connection is available; connector errors propagate.
 The cursor is closed whether SQL execution succeeds or fails.
 
-### `create_database(name)`
+### `DatabaseOperations(manager).create_database(name)`
 
 Accepts a string matching `[A-Za-z_][A-Za-z0-9_]{0,63}` and returns `None` after
 successful execution. It preserves the supplied name, including case, and does
@@ -55,8 +58,7 @@ not strip whitespace. The CLI strips surrounding whitespace before calling it.
 
 Raises `ValueError` for a string that fails validation, `RuntimeError` for a
 valid name when disconnected, or `mysql.connector.Error` for server/connector
-errors such as duplicate names and insufficient permissions. Non-string input
-is outside the method's contract and may raise `TypeError`.
+errors such as duplicate names and insufficient permissions. Non-string names also raise `ValueError`.
 
 Validation occurs before opening the cursor. SQL value placeholders cannot
 represent database identifiers, so the implementation validates the restricted
@@ -79,16 +81,16 @@ helper; callers should not need it.
 
 ## Modification and deletion API
 
-`validate_database_name(name, protect_system=False)` validates the shared name
+`validation.validate_identifier(name, protect_system=False)` validates the shared name
 rule. When protection is enabled, the four standard MySQL system databases are
 rejected case-insensitively with `ValueError`.
 
-`modify_database(name, charset, collation)` executes `ALTER DATABASE` to change
+`DatabaseOperations.modify_database(name, charset, collation)` executes `ALTER DATABASE` to change
 both defaults. Option strings must begin with an ASCII letter and contain only
 ASCII letters, digits, or underscores, up to 64 characters. MySQL checks support
 and compatibility. Existing tables and data are not converted.
 
-`delete_database(name)` executes `DROP DATABASE` without `IF EXISTS`, so a missing
+`DatabaseOperations.delete_database(name)` executes `DROP DATABASE` without `IF EXISTS`, so a missing
 database raises a server error. This permanently removes the database contents.
 
 Both methods validate identifiers and protect system databases before opening a
@@ -110,8 +112,12 @@ from getpass import getpass
 import mysql.connector
 
 from ConnManager import ConnectionManager
+from database_operations import DatabaseOperations
+from table_operations import TableOperations
 
 manager = ConnectionManager()
+databases = DatabaseOperations(manager)
+tables = TableOperations(manager)
 try:
     manager.connect(
         host="localhost",
@@ -119,8 +125,9 @@ try:
         user=input("MySQL username: "),
         password=getpass("MySQL password: "),
     )
-    manager.create_database("example_app")
-    for name in manager.list_databases():
+    databases.create_database("example_app")
+    tables.create_table("example_app", "users", {"id": "INT"}, primary_key="id")
+    for name in databases.list_databases():
         print(name)
 except (ValueError, RuntimeError, mysql.connector.Error) as error:
     print(f"Database operation failed: {error}")
@@ -188,13 +195,14 @@ exact deletion phrase after verifying the target.
 ## Extending the application
 
 Keep prompts in `cli.py`, the executable entry point in `main.py`, and reusable
-database logic in `ConnectionManager.py`.
+database logic in `database_operations.py`, table logic in `table_operations.py`,
+and connection lifecycle in `ConnManager.py`.
 For new operations, close cursors on both success and failure, propagate useful
 errors to callers, and test failure behavior as well as successful execution.
 Use connector parameter binding for data values and deliberate validation for
 identifiers.
 
-Potential additions include selecting a database, creating tables, exposing
+Potential additions include selecting a database, exposing
 connection security options, and adding non-interactive commands. Each requires
 implementation and documentation; none is currently available. Any future
 non-interactive interface should define exit statuses for failed operations
@@ -206,3 +214,33 @@ your administration tool. Try an incompatible charset/collation and verify an
 error. Cancel deletion once before confirming deletion of the disposable database,
 then list databases to verify removal. Mock tests cover these control paths but
 do not verify behavior against a live server.
+
+## Table creation API
+
+`TableOperations(manager).create_table(database, name, columns, primary_key=None)` creates one table in
+an explicitly named database without changing the connection's default database.
+`columns` is a nonempty dictionary mapping names to type strings, in column order.
+See [Create tables](../README.md#create-tables) for supported types and an example.
+`VARCHAR` accepts lengths 1–65535; `DECIMAL` accepts precision 1–65 and scale
+0–30 no greater than precision. MySQL enforces further storage and key limits.
+
+Invalid names, duplicate column names ignoring case, unsupported types, and an
+unknown primary key raise `ValueError` before opening a cursor. System databases
+are rejected. A primary key must match a dictionary key exactly.
+Disconnected calls raise `RuntimeError`; connector errors propagate and cursors
+close on success or failure. Success returns `None`. Existing tables are not
+replaced or silently skipped. Table creation takes effect immediately.
+
+`tests/test_table_creation.py` covers SQL generation, rejected schemas, disconnected
+calls, cursor cleanup, and menu creation and error recovery with mocked connections.
+
+## Shared SQL execution and migration
+
+`ConnectionManager.execute(statement, fetch=False)` executes SQL and always closes
+its cursor. With `fetch=True` it returns all result rows; otherwise it returns
+`None`. Operation classes validate interpolated identifiers before using it.
+
+Database and table methods have moved off `ConnectionManager`. Existing callers
+should construct `DatabaseOperations(manager)` and `TableOperations(manager)` and
+call the corresponding methods there, as in the example above. Connection setup
+and cleanup remain on the manager. The interactive menu is unchanged.

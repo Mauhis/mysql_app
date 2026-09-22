@@ -2,7 +2,7 @@
 
 An interactive Python command-line application for connecting to an existing
 MySQL server, listing visible databases, creating empty databases, changing database defaults,
-and deleting databases.
+deleting databases, and creating tables.
 
 ## Contents
 
@@ -10,6 +10,9 @@ and deleting databases.
 - [Installation](#installation)
 - [Usage](#usage)
 - [Database names and creation behavior](#database-names-and-creation-behavior)
+- [Modify or delete existing databases](#modify-or-delete-existing-databases)
+- [Create tables](#create-tables)
+- [Use the classes in Python](#use-the-classes-in-python)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Developer guide and API reference](docs/development.md)
 - [Project layout](#project-layout)
@@ -20,11 +23,12 @@ and deleting databases.
 - Python 3.10 or newer, with `pip` and virtual environment support.
 - An existing, running MySQL server reachable from your machine.
 - A MySQL account authorized to connect from your machine and create the intended
-  databases. Ask your database administrator for an appropriate account.
+  databases and tables. Modification requires ALTER permission; deletion requires
+  DROP permission. Ask your database administrator for an appropriate account.
 - The `mysql-connector-python` dependency declared in `requirements.txt`.
 
-The application does not install or start MySQL. It creates empty databases;
-it does not create tables, manage records, run migrations, or rename databases.
+The application does not install or start MySQL. It creates databases and tables;
+it does not manage records, run migrations, or rename databases.
 There is no graphical interface or web server.
 
 ## Installation
@@ -84,6 +88,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 2. Create database
 3. Modify database defaults
 4. Delete database
+5. Create table
 0. Exit
 ```
 
@@ -92,9 +97,15 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
   `No databases visible.`
 - **2 — Create database:** asks for a name and creates the database immediately.
   Successful creation prints a confirmation and returns to the menu.
+- **3 — Modify database defaults:** changes the character set and collation
+  after exact confirmation with `MODIFY`.
+- **4 — Delete database:** removes a database and its contents after exact
+  confirmation with `DELETE database_name`.
+- **5 — Create table:** asks for an existing database, table name, column names
+  and types, and an optional primary key.
 - **0 — Exit:** closes the connection and ends the program.
 
-Other choices print `Choose 1, 2, 3, 4, or 0.` and return to the menu. Operation errors
+Other choices print `Choose 1, 2, 3, 4, 5, or 0.` and return to the menu. Operation errors
 print `Operation failed:` and allow another choice. There is no automatic
 reconnect; if the connection is lost, exit and restart the application.
 
@@ -115,6 +126,7 @@ Connected successfully.
 2. Create database
 3. Modify database defaults
 4. Delete database
+5. Create table
 0. Exit
 Choose an option: 2
 New database name: demo_app
@@ -124,6 +136,7 @@ Database 'demo_app' created successfully.
 2. Create database
 3. Modify database defaults
 4. Delete database
+5. Create table
 0. Exit
 Choose an option: 0
 ```
@@ -158,36 +171,6 @@ Creation takes effect immediately; exiting does not undo it. Existing names
 produce a server error because the app does not use `IF NOT EXISTS`. Creation never overwrites an existing database. Database name case behavior is determined by
 the server; the app preserves the entered case.
 
-## Project layout
-
-```text
-mysql_app/
-├── ConnManager.py                 # Reusable connection and database operations
-├── cli.py                         # Interactive prompts and menu workflow
-├── main.py                        # Minimal executable entry point
-├── requirements.txt               # MySQL connector dependency range
-├── tests/test_connection_manager.py
-├── docs/
-│   ├── development.md             # API, architecture, testing, extension points
-│   └── troubleshooting.md         # Setup and runtime problems
-├── README.md
-└── LICENSE
-```
-
-To run the automated tests in an activated environment:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Tests mock the connector and do not require a running MySQL server. See the
-[developer guide](docs/development.md) for coverage and manual verification.
-
-## License
-
-This project's code is available under the [MIT License](LICENSE). Dependencies
-retain their own licenses.
-
 ## Modify or delete existing databases
 
 Use **1** to find the exact name, then **3** to change defaults or **4** to delete.
@@ -209,3 +192,113 @@ database and its tables and data; the app cannot undo it. Back up needed data fi
 
 The account needs ALTER permission for modification and DROP permission for
 deletion. Server errors return you to the menu. Changes take effect immediately.
+
+## Create tables
+
+Choose **5**, enter an existing database and a new table name, then enter each
+column name and type. Leave the column name blank to finish, and optionally
+enter one column name as the primary key. At least one column is required.
+
+Supported types are `INT`, `BIGINT`, `FLOAT`, `DOUBLE`, `BOOLEAN`, `DATE`,
+`DATETIME`, `TIMESTAMP`, `TEXT`, `VARCHAR(n)`, and `DECIMAL(p, s)`.
+Names follow the same rules as database names. Column names must be unique
+regardless of case. The server checks additional limits, such as row size.
+Primary key columns are non-nullable; other columns use MySQL defaults.
+Auto-increment, custom defaults, and foreign keys are not currently exposed.
+
+Creation is immediate and requires CREATE permission on the target database.
+Existing tables produce an error and are never replaced. System databases
+are protected. New tables inherit the database character set and collation.
+
+## Use the classes in Python
+
+Database and table operations use separate classes that share one
+`ConnectionManager`. The manager opens and closes the connection and executes
+SQL; operation classes build and validate their statements. Prompts and
+confirmations belong to `cli.py`.
+
+Run this example from the project directory. It creates a real database and
+table, so use new names and an account with the required permissions.
+
+```python
+from getpass import getpass
+
+import mysql.connector
+
+from ConnManager import ConnectionManager
+from database_operations import DatabaseOperations
+from table_operations import TableOperations
+
+manager = ConnectionManager()
+databases = DatabaseOperations(manager)
+tables = TableOperations(manager)
+
+try:
+    manager.connect(
+        host="localhost",
+        user=input("MySQL username: "),
+        password=getpass("MySQL password: "),
+    )
+    databases.create_database("demo_app")
+    tables.create_table(
+        "demo_app",
+        "products",
+        {"id": "INT", "name": "VARCHAR(100)", "price": "DECIMAL(10, 2)"},
+        primary_key="id",
+    )
+    print(databases.list_databases())
+except (ValueError, RuntimeError, mysql.connector.Error) as error:
+    print(f"Operation failed: {error}")
+finally:
+    manager.close()
+```
+
+| Class or module | Responsibility |
+| --- | --- |
+| `ConnectionManager` | `connect()`, `execute()`, and `close()`; connection and cursor cleanup. |
+| `DatabaseOperations` | `list_databases()`, `create_database()`, `modify_database()`, and `delete_database()`. |
+| `TableOperations` | `create_table()`; the home for future table operations. |
+| `validation` | Shared `validate_identifier()` and `validate_sql_name()` functions. |
+
+Database and table methods are no longer on `ConnectionManager`. Update older
+calls such as `manager.create_database(...)` to `databases.create_database(...)`
+and `manager.create_table(...)` to `tables.create_table(...)`.
+Both operation objects use the manager's current connection; neither opens or
+closes its own connection. Programmatic operations do not prompt for confirmation.
+See the [API reference](docs/development.md) for arguments and error behavior.
+
+## Project layout
+
+```text
+mysql_app/
+├── ConnManager.py                 # Connection lifecycle and SQL execution
+├── database_operations.py         # DatabaseOperations
+├── table_operations.py            # TableOperations
+├── validation.py                  # Shared SQL name validation
+├── cli.py                         # Interactive prompts and menu workflow
+├── main.py                        # Minimal executable entry point
+├── requirements.txt               # MySQL connector dependency range
+├── tests/
+│   ├── test_connection_manager.py
+│   ├── test_database_changes.py
+│   └── test_table_creation.py
+├── docs/
+│   ├── development.md             # API, architecture, testing, extension points
+│   └── troubleshooting.md         # Setup and runtime problems
+├── README.md
+└── LICENSE
+```
+
+To run the automated tests in an activated environment:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Tests mock the connector and do not require a running MySQL server. See the
+[developer guide](docs/development.md) for coverage and manual verification.
+
+## License
+
+This project's code is available under the [MIT License](LICENSE). Dependencies
+retain their own licenses.
