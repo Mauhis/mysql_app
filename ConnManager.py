@@ -27,7 +27,8 @@ class ConnectionManager:
         # A cursor sends SQL statements and reads their result rows.
         return self.connection.cursor()
 
-    def execute(self, statement, *, fetch=False, params=None, commit=False):
+    def execute(self, statement, *, fetch=False, params=None, commit=False,
+                include_columns=False):
         """Execute one statement, always releasing its cursor afterward."""
         cursor = self._cursor()
         try:
@@ -35,7 +36,10 @@ class ConnectionManager:
                 cursor.execute(statement)
             else:
                 cursor.execute(statement, params)
-            result = cursor.fetchall() if fetch else None
+            if include_columns:
+                result = (list(cursor.column_names), cursor.fetchall())
+            else:
+                result = cursor.fetchall() if fetch else None
             if commit:
                 self.connection.commit()
             return result

@@ -12,7 +12,8 @@ from validation import validate_identifier
 
 MENU = (
     "\n1. List databases\n2. Create database\n"
-    "3. Modify database defaults\n4. Delete database\n5. Create table\n0. Exit"
+    "3. Modify database defaults\n4. Delete database\n5. Create table\n"
+    "6. List tables\n7. View table contents\n0. Exit"
 )
 
 
@@ -34,10 +35,10 @@ def connect_to_server(db):
     db.connect(host, user, password, port)
 
 
-def read_existing_database(db):
+def read_existing_database(db, *, protect_system=True):
     """Return a validated, visible database selected by the user."""
     name = input("Existing database name: ").strip()
-    validate_identifier(name, protect_system=True)
+    validate_identifier(name, protect_system=protect_system)
     if name not in db.list_databases():
         raise ValueError("Choose an exact database name from the database list.")
     return name
@@ -54,6 +55,42 @@ def create_database(db):
     name = input("New database name: ").strip()
     db.create_database(name)
     print(f"Database '{name}' created successfully.")
+
+
+def list_tables(db, tables):
+    """Print visible tables and views in the selected database."""
+    database = read_existing_database(db, protect_system=False)
+    names = tables.list_tables(database)
+    print("\n".join(names) if names else "No tables visible.")
+
+
+def view_table(db, tables):
+    """Display a selected table's column names and values."""
+    database = read_existing_database(db, protect_system=False)
+    names = tables.list_tables(database)
+    if not names:
+        print("No tables visible.")
+        return
+    print("Tables:\n" + "\n".join(names))
+    name = input("Table name: ").strip()
+    if name not in names:
+        raise ValueError("Choose an exact table name from the table list.")
+    columns, rows = tables.read_table(database, name)
+    # repr keeps newlines/tabs on one line and distinguishes text from SQL NULL.
+    rendered = [["NULL" if value is None else repr(value)
+                 if isinstance(value, (str, bytes)) else str(value)
+                 for value in row] for row in rows]
+    widths = [max(len(column), *(len(row[i]) for row in rendered), 1)
+              for i, column in enumerate(columns)]
+
+    def print_row(values):
+        print(" | ".join(value.ljust(width) for value, width in zip(values, widths)))
+
+    print_row(columns)
+    print("-+-".join("-" * width for width in widths))
+    for row in rendered:
+        print_row(row)
+    print(f"{len(rows)} row(s)." if rows else "Table is empty.")
 
 
 def create_table(db, tables):
@@ -122,12 +159,14 @@ def handle_menu_choice(db, tables, choice):
         "3": modify_database,
         "4": delete_database,
         "5": lambda db: create_table(db, tables),
+        "6": lambda db: list_tables(db, tables),
+        "7": lambda db: view_table(db, tables),
     }
     if choice == "0":
         return False
     action = actions.get(choice)
     if action is None:
-        print("Choose 1, 2, 3, 4, 5, or 0.")
+        print("Choose 1, 2, 3, 4, 5, 6, 7, or 0.")
     else:
         action(db)
     return True

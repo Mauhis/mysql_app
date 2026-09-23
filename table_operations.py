@@ -11,6 +11,20 @@ class TableOperations:
     def __init__(self, manager):
         self.manager = manager
 
+    def list_tables(self, database):
+        """Return visible table and view names in a database."""
+        validate_identifier(database)
+        rows = self.manager.execute(f"SHOW TABLES FROM `{database}`", fetch=True)
+        return [row[0] for row in rows]
+
+    def read_table(self, database, name):
+        """Return (column names, all rows), preserving native values and NULLs."""
+        validate_identifier(database)
+        validate_identifier(name)
+        return self.manager.execute(
+            f"SELECT * FROM `{database}`.`{name}`", include_columns=True,
+        )
+
     def create_table(self, database, name, columns, primary_key=None):
         """Create a table using a mapping of column names to supported SQL types.
 

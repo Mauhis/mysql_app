@@ -2,7 +2,7 @@
 
 An interactive Python command-line application for connecting to an existing
 MySQL server, listing visible databases, creating empty databases, changing database defaults,
-deleting databases, and creating tables.
+deleting databases, creating tables, and browsing table contents.
 
 ## Contents
 
@@ -89,6 +89,8 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 3. Modify database defaults
 4. Delete database
 5. Create table
+6. List tables
+7. View table contents
 0. Exit
 ```
 
@@ -103,9 +105,15 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
   confirmation with `DELETE database_name`.
 - **5 — Create table:** asks for an existing database, table name, column names
   and types, and an optional primary key.
+- **6 — List tables:** asks for a database and lists its visible tables and views.
+- **7 — View table contents:** lists tables in a database, then asks which table
+  to display. Prints column headings, all rows, and a row count. Empty tables
+  are reported explicitly. SQL NULL prints as `NULL`; text values are quoted.
+  Reading requires SELECT permission. All rows are loaded into memory, so use
+  this option for tables small enough to display in your terminal.
 - **0 — Exit:** closes the connection and ends the program.
 
-Other choices print `Choose 1, 2, 3, 4, 5, or 0.` and return to the menu. Operation errors
+Other choices print `Choose 1, 2, 3, 4, 5, 6, 7, or 0.` and return to the menu. Operation errors
 print `Operation failed:` and allow another choice. There is no automatic
 reconnect; if the connection is lost, exit and restart the application.
 
@@ -127,6 +135,8 @@ Connected successfully.
 3. Modify database defaults
 4. Delete database
 5. Create table
+6. List tables
+7. View table contents
 0. Exit
 Choose an option: 2
 New database name: demo_app
@@ -137,6 +147,8 @@ Database 'demo_app' created successfully.
 3. Modify database defaults
 4. Delete database
 5. Create table
+6. List tables
+7. View table contents
 0. Exit
 Choose an option: 0
 ```
@@ -227,6 +239,11 @@ omitted columns use server defaults. These methods are available through the
 Python API. Column additions require ALTER permission and inserts require INSERT
 permission. Both methods reject system databases and propagate server errors.
 
+For reading from Python, `tables.list_tables("demo_app")` returns table/view
+names. `columns, rows = tables.read_table("demo_app", "products")` returns column
+names and all row tuples, with SQL NULL represented by `None`. Read operations
+use the same identifier rules and allow system databases when permissions permit.
+
 ## Use the classes in Python
 
 Database and table operations use separate classes that share one
@@ -274,7 +291,7 @@ finally:
 | --- | --- |
 | `ConnectionManager` | `connect()`, `execute()`, and `close()`; connection and cursor cleanup. |
 | `DatabaseOperations` | `list_databases()`, `create_database()`, `modify_database()`, and `delete_database()`. |
-| `TableOperations` | `create_table()`, `add_columns()`, and `insert_row()`. |
+| `TableOperations` | `list_tables()`, `read_table()`, `create_table()`, `add_columns()`, and `insert_row()`. |
 | `validation` | Shared `validate_identifier()` and `validate_sql_name()` functions. |
 
 Database and table methods are no longer on `ConnectionManager`. Update older
