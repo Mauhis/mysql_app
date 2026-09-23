@@ -71,6 +71,62 @@ class TableCreationTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.tables.create_table("example", "items", {"id": "INT"})
 
+    def test_add_columns(self):
+        self.tables.add_columns("example", "items", {"label": "varchar(80)", "qty": "INT"})
+        self.cursor.execute.assert_called_once_with(
+            "ALTER TABLE `example`.`items` ADD COLUMN `label` VARCHAR(80), ADD COLUMN `qty` INT"
+        )
+        self.cursor.close.assert_called_once()
+
+    def test_insert_row_parameters_and_commit(self):
+        value = "O'Reilly'); DROP TABLE items; --"
+        self.tables.insert_row("example", "items", {"label": value, "qty": None})
+        self.cursor.execute.assert_called_once_with(
+            "INSERT INTO `example`.`items` (`label`, `qty`) VALUES (%s, %s)",
+            (value, None),
+        )
+        self.manager.connection.commit.assert_called_once()
+        self.cursor.close.assert_called_once()
+
+    def test_invalid_additions_and_rows_do_not_execute(self):
+        for method in (self.tables.add_columns, self.tables.insert_row):
+            for database, name, mapping in (
+                ("sys", "items", {"id": "INT"}),
+                ("bad`db", "items", {"id": "INT"}),
+                ("example", "bad`table", {"id": "INT"}),
+                ("example", "items", {}),
+                ("example", "items", [("id", "INT")]),
+                ("example", "items", {"bad`column": "INT"}),
+                ("example", "items", {"id": "INT", "ID": "INT"}),
+            ):
+                with self.subTest(method=method.__name__, mapping=mapping):
+                    with self.assertRaises(ValueError):
+                        method(database, name, mapping)
+        with self.assertRaises(ValueError):
+            self.tables.add_columns("example", "items", {"id": "INT; DROP TABLE items"})
+        self.manager.connection.cursor.assert_not_called()
+
+    def test_insert_failure_rolls_back_and_closes_cursor(self):
+        self.cursor.execute.side_effect = mysql.connector.Error("Invalid value")
+        with self.assertRaises(mysql.connector.Error):
+            self.tables.insert_row("example", "items", {"id": 1})
+        self.manager.connection.commit.assert_not_called()
+        self.manager.connection.rollback.assert_called_once()
+        self.cursor.close.assert_called_once()
+
+    def test_commit_failure_rolls_back_and_closes_cursor(self):
+        self.manager.connection.commit.side_effect = mysql.connector.Error("Commit failed")
+        with self.assertRaises(mysql.connector.Error):
+            self.tables.insert_row("example", "items", {"id": 1})
+        self.manager.connection.rollback.assert_called_once()
+        self.cursor.close.assert_called_once()
+
+    def test_new_operations_disconnected(self):
+        self.manager.connection = None
+        for method in (self.tables.add_columns, self.tables.insert_row):
+            with self.assertRaises(RuntimeError):
+                method("example", "items", {"id": "INT"})
+
     def test_menu_creates_table(self):
         databases = MagicMock(spec=DatabaseOperations)
         tables = MagicMock(spec=TableOperations)

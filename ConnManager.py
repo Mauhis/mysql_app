@@ -27,12 +27,22 @@ class ConnectionManager:
         # A cursor sends SQL statements and reads their result rows.
         return self.connection.cursor()
 
-    def execute(self, statement, *, fetch=False):
+    def execute(self, statement, *, fetch=False, params=None, commit=False):
         """Execute one statement, always releasing its cursor afterward."""
         cursor = self._cursor()
         try:
-            cursor.execute(statement)
-            return cursor.fetchall() if fetch else None
+            if params is None:
+                cursor.execute(statement)
+            else:
+                cursor.execute(statement, params)
+            result = cursor.fetchall() if fetch else None
+            if commit:
+                self.connection.commit()
+            return result
+        except Exception:
+            if commit:
+                self.connection.rollback()
+            raise
         finally:
             cursor.close()
 

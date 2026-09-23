@@ -234,11 +234,30 @@ replaced or silently skipped. Table creation takes effect immediately.
 `tests/test_table_creation.py` covers SQL generation, rejected schemas, disconnected
 calls, cursor cleanup, and menu creation and error recovery with mocked connections.
 
+## Adding columns and row values
+
+`TableOperations(manager).add_columns(database, name, columns)` adds columns to
+an existing table with one ALTER TABLE statement. It uses the same dictionary,
+identifier validation, and supported types as `create_table()`. Existing column
+names cause a server error. Schema changes take effect immediately.
+
+`TableOperations(manager).insert_row(database, name, values)` inserts one row
+using a nonempty dictionary of column names to Python values. Names must be valid
+and unique ignoring case. Values are bound as SQL parameters, including `None`
+for NULL. Omitted columns use server defaults; MySQL checks types and constraints.
+The method commits on success and rolls back on execution or commit failure.
+Commit and rollback affect the connection's entire current transaction, so avoid
+mixing this API with unrelated pending writes on the shared connection.
+Both methods return `None` on success and reject system databases.
+
 ## Shared SQL execution and migration
 
-`ConnectionManager.execute(statement, fetch=False)` executes SQL and always closes
+`ConnectionManager.execute(statement, *, fetch=False, params=None, commit=False)` executes SQL and always closes
 its cursor. With `fetch=True` it returns all result rows; otherwise it returns
-`None`. Operation classes validate interpolated identifiers before using it.
+`None`. Optional `params` are passed separately to the connector. With
+`commit=True`, success commits and failure rolls back the current transaction;
+otherwise transaction handling is left to the caller. Operation classes validate
+interpolated identifiers before using it.
 
 Database and table methods have moved off `ConnectionManager`. Existing callers
 should construct `DatabaseOperations(manager)` and `TableOperations(manager)` and

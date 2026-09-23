@@ -20,6 +20,19 @@ class TableOperations:
         """
         validate_identifier(database, protect_system=True)
         validate_identifier(name)
+        definitions = self._column_definitions(columns)
+        if primary_key is not None:
+            validate_identifier(primary_key)
+            if primary_key not in columns:
+                raise ValueError("Primary key must name a defined column exactly.")
+            definitions.append(f"PRIMARY KEY (`{primary_key}`)")
+        self.manager.execute(
+            f"CREATE TABLE `{database}`.`{name}` ({', '.join(definitions)})"
+        )
+
+    @staticmethod
+    def _column_definitions(columns):
+        """Validate column definitions shared by CREATE and ALTER TABLE."""
         if not isinstance(columns, dict) or not columns:
             raise ValueError("Provide a nonempty dictionary of column names and types.")
         definitions = []
@@ -46,11 +59,41 @@ class TableOperations:
             ):
                 raise ValueError(f"Unsupported or invalid column type: {data_type}")
             definitions.append(f"`{column}` {data_type}")
-        if primary_key is not None:
-            validate_identifier(primary_key)
-            if primary_key not in columns:
-                raise ValueError("Primary key must name a defined column exactly.")
-            definitions.append(f"PRIMARY KEY (`{primary_key}`)")
+        return definitions
+
+    def add_columns(self, database, name, columns):
+        """Add columns using the same name/type mapping as create_table.
+
+        Existing columns and incompatible definitions produce server errors.
+        This schema change takes effect immediately.
+        """
+        validate_identifier(database, protect_system=True)
+        validate_identifier(name)
+        definitions = self._column_definitions(columns)
+        additions = ", ".join(f"ADD COLUMN {definition}" for definition in definitions)
+        self.manager.execute(f"ALTER TABLE `{database}`.`{name}` {additions}")
+
+    def insert_row(self, database, name, values):
+        """Insert and commit one row from a nonempty column/value dictionary.
+
+        Values are passed as SQL parameters; None represents SQL NULL.
+        Omitted columns use server defaults. The server validates value types
+        and constraints. Success returns None; connector errors propagate.
+        """
+        validate_identifier(database, protect_system=True)
+        validate_identifier(name)
+        if not isinstance(values, dict) or not values:
+            raise ValueError("Provide a nonempty dictionary of column names and values.")
+        seen = set()
+        for column in values:
+            validate_identifier(column)
+            if column.lower() in seen:
+                raise ValueError("Column names must be unique regardless of case.")
+            seen.add(column.lower())
+        columns = ", ".join(f"`{column}`" for column in values)
+        placeholders = ", ".join("%s" for _ in values)
         self.manager.execute(
-            f"CREATE TABLE `{database}`.`{name}` ({', '.join(definitions)})"
+            f"INSERT INTO `{database}`.`{name}` ({columns}) VALUES ({placeholders})",
+            params=tuple(values.values()),
+            commit=True,
         )

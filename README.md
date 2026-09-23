@@ -28,7 +28,7 @@ deleting databases, and creating tables.
 - The `mysql-connector-python` dependency declared in `requirements.txt`.
 
 The application does not install or start MySQL. It creates databases and tables;
-it does not manage records, run migrations, or rename databases.
+The Python API also adds columns and inserts rows; it does not run migrations or rename databases.
 There is no graphical interface or web server.
 
 ## Installation
@@ -210,6 +210,23 @@ Creation is immediate and requires CREATE permission on the target database.
 Existing tables produce an error and are never replaced. System databases
 are protected. New tables inherit the database character set and collation.
 
+To add columns and insert row values from Python:
+
+```python
+tables.add_columns("demo_app", "products", {"stock": "INT"})
+tables.insert_row(
+    "demo_app", "products",
+    {"id": 1, "name": "Notebook", "price": "4.50", "stock": 20},
+)
+```
+
+`add_columns()` defines new columns on an existing table using the supported SQL
+types above. `insert_row()` accepts a nonempty dictionary of column names and
+values, uses SQL parameters, and commits the insert. Use `None` for SQL NULL;
+omitted columns use server defaults. These methods are available through the
+Python API. Column additions require ALTER permission and inserts require INSERT
+permission. Both methods reject system databases and propagate server errors.
+
 ## Use the classes in Python
 
 Database and table operations use separate classes that share one
@@ -257,7 +274,7 @@ finally:
 | --- | --- |
 | `ConnectionManager` | `connect()`, `execute()`, and `close()`; connection and cursor cleanup. |
 | `DatabaseOperations` | `list_databases()`, `create_database()`, `modify_database()`, and `delete_database()`. |
-| `TableOperations` | `create_table()`; the home for future table operations. |
+| `TableOperations` | `create_table()`, `add_columns()`, and `insert_row()`. |
 | `validation` | Shared `validate_identifier()` and `validate_sql_name()` functions. |
 
 Database and table methods are no longer on `ConnectionManager`. Update older
