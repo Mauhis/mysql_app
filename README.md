@@ -91,6 +91,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 5. Create table
 6. List tables
 7. View table contents
+8. Add random integer rows
 0. Exit
 ```
 
@@ -113,7 +114,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
   this option for tables small enough to display in your terminal.
 - **0 — Exit:** closes the connection and ends the program.
 
-Other choices print `Choose 1, 2, 3, 4, 5, 6, 7, or 0.` and return to the menu. Operation errors
+Other choices print `Choose 1, 2, 3, 4, 5, 6, 7, 8, or 0.` and return to the menu. Operation errors
 print `Operation failed:` and allow another choice. There is no automatic
 reconnect; if the connection is lost, exit and restart the application.
 
@@ -137,6 +138,7 @@ Connected successfully.
 5. Create table
 6. List tables
 7. View table contents
+8. Add random integer rows
 0. Exit
 Choose an option: 2
 New database name: demo_app
@@ -149,6 +151,7 @@ Database 'demo_app' created successfully.
 5. Create table
 6. List tables
 7. View table contents
+8. Add random integer rows
 0. Exit
 Choose an option: 0
 ```
@@ -336,3 +339,27 @@ Tests mock the connector and do not require a running MySQL server. See the
 
 This project's code is available under the [MIT License](LICENSE). Dependencies
 retain their own licenses.
+
+## Add random integer rows
+
+Choose **8**, select an existing database and table, and enter the number of
+new rows (for example, `10`). The app lists the table's existing columns.
+Select `salary`, enter minimum `5000` and maximum `10000`, then leave the next
+column prompt blank to insert. You can select additional columns with their
+own ranges before finishing. No employee names or IDs are requested.
+
+Both endpoints are inclusive. Negative values and equal endpoints are allowed;
+values may repeat. This inserts new rows, rather than updating existing rows.
+Unselected columns must allow NULL, have defaults, or be auto-generated.
+The server checks column types, numeric limits, and uniqueness constraints.
+Use option 7 to view the results.
+
+Python example:
+
+```python
+tables.insert_random_rows("demo_app", "employees", 10, {"salary": (5000, 10000)})
+```
+
+The batch uses parameterized SQL and one commit; failures roll back on
+transactional tables such as InnoDB. `insert_rows()` and `insert_row()` remain
+available for inserting explicit values from Python.

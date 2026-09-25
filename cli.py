@@ -13,7 +13,7 @@ from validation import validate_identifier
 MENU = (
     "\n1. List databases\n2. Create database\n"
     "3. Modify database defaults\n4. Delete database\n5. Create table\n"
-    "6. List tables\n7. View table contents\n0. Exit"
+    "6. List tables\n7. View table contents\n8. Add random integer rows\n0. Exit"
 )
 
 
@@ -114,6 +114,40 @@ def create_table(db, tables):
     print(f"Table '{database}.{name}' created successfully.")
 
 
+def add_random_rows(db, tables):
+    """Collect a row count and inclusive integer ranges for existing columns."""
+    database = read_existing_database(db)
+    names = tables.list_tables(database)
+    if not names:
+        print("No tables visible. Create a table first with option 5.")
+        return
+    print("Tables:\n" + "\n".join(names))
+    name = input("Table name: ").strip()
+    if name not in names:
+        raise ValueError("Choose an exact table name from the table list.")
+    columns = tables.list_columns(database, name)
+    print("Columns:\n" + "\n".join(columns))
+    count = int(input("Number of rows: ").strip())
+    if count <= 0:
+        raise ValueError("Number of rows must be positive.")
+    ranges = {}
+    while True:
+        column = input("Column to fill (blank to finish): ").strip()
+        if not column:
+            break
+        if column not in columns:
+            raise ValueError("Choose an exact column name from the column list.")
+        if column in ranges:
+            raise ValueError("Each column can only be selected once.")
+        minimum = int(input(f"Minimum for {column}: ").strip())
+        maximum = int(input(f"Maximum for {column}: ").strip())
+        if minimum > maximum:
+            raise ValueError("Minimum must be less than or equal to maximum.")
+        ranges[column] = (minimum, maximum)
+    tables.insert_random_rows(database, name, count, ranges)
+    print(f"Inserted {count} row(s) into '{database}.{name}'.")
+
+
 def modify_database(db):
     """Prompt for, confirm, and update a database's defaults."""
     name = read_existing_database(db)
@@ -161,12 +195,13 @@ def handle_menu_choice(db, tables, choice):
         "5": lambda db: create_table(db, tables),
         "6": lambda db: list_tables(db, tables),
         "7": lambda db: view_table(db, tables),
+        "8": lambda db: add_random_rows(db, tables),
     }
     if choice == "0":
         return False
     action = actions.get(choice)
     if action is None:
-        print("Choose 1, 2, 3, 4, 5, 6, 7, or 0.")
+        print("Choose 1, 2, 3, 4, 5, 6, 7, 8, or 0.")
     else:
         action(db)
     return True

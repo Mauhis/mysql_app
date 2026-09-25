@@ -1,6 +1,7 @@
 """Reusable table operations over a shared connection."""
 
 import re
+from random import randint
 
 from validation import validate_identifier
 
@@ -16,6 +17,42 @@ class TableOperations:
         validate_identifier(database)
         rows = self.manager.execute(f"SHOW TABLES FROM `{database}`", fetch=True)
         return [row[0] for row in rows]
+
+    def list_columns(self, database, name):
+        """Return existing column names without loading table contents."""
+        validate_identifier(database)
+        validate_identifier(name)
+        rows = self.manager.execute(
+            f"SHOW COLUMNS FROM `{database}`.`{name}`", fetch=True,
+        )
+        return [row[0] for row in rows]
+
+    def insert_random_rows(self, database, name, count, ranges):
+        """Insert count rows using {column: (minimum, maximum)} integer ranges.
+
+        Both endpoints are inclusive; repeated values are possible. Omitted
+        columns use database defaults. The server checks types and constraints.
+        """
+        validate_identifier(database, protect_system=True)
+        validate_identifier(name)
+        if type(count) is not int or count <= 0:
+            raise ValueError("Number of rows must be a positive integer.")
+        if not isinstance(ranges, dict) or not ranges:
+            raise ValueError("Select at least one column and its integer range.")
+        seen = set()
+        for column, bounds in ranges.items():
+            validate_identifier(column)
+            if column.lower() in seen:
+                raise ValueError("Column names must be unique regardless of case.")
+            seen.add(column.lower())
+            if (not isinstance(bounds, (tuple, list)) or len(bounds) != 2
+                    or any(type(value) is not int for value in bounds)
+                    or bounds[0] > bounds[1]):
+                raise ValueError("Each range needs integer bounds with minimum <= maximum.")
+        return self.insert_rows(database, name, [
+            {column: randint(*bounds) for column, bounds in ranges.items()}
+            for _ in range(count)
+        ])
 
     def read_table(self, database, name):
         """Return (column names, all rows), preserving native values and NULLs."""
@@ -94,6 +131,18 @@ class TableOperations:
         Omitted columns use server defaults. The server validates value types
         and constraints. Success returns None; connector errors propagate.
         """
+        self.insert_rows(database, name, [values])
+
+    def insert_rows(self, database, name, rows):
+        """Insert dictionaries with identical columns and commit once.
+
+        Values are parameterized. Failures roll back on transactional tables.
+        Return the inserted count; validate all rows before executing SQL.
+        """
+        rows = list(rows)
+        if not rows:
+            raise ValueError("Provide at least one row.")
+        values = rows[0]
         validate_identifier(database, protect_system=True)
         validate_identifier(name)
         if not isinstance(values, dict) or not values:
@@ -106,8 +155,13 @@ class TableOperations:
             seen.add(column.lower())
         columns = ", ".join(f"`{column}`" for column in values)
         placeholders = ", ".join("%s" for _ in values)
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != set(values):
+                raise ValueError("Every row must contain the same column names.")
+        groups = ", ".join(f"({placeholders})" for _ in rows)
         self.manager.execute(
-            f"INSERT INTO `{database}`.`{name}` ({columns}) VALUES ({placeholders})",
-            params=tuple(values.values()),
+            f"INSERT INTO `{database}`.`{name}` ({columns}) VALUES {groups}",
+            params=tuple(row[column] for row in rows for column in values),
             commit=True,
         )
+        return len(rows)
