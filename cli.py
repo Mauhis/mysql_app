@@ -8,12 +8,13 @@ from ConnManager import ConnectionManager
 from database_operations import DatabaseOperations
 from table_operations import TableOperations
 from validation import validate_identifier
+from column_values import ColumnValues
 
 
 MENU = (
     "\n1. List databases\n2. Create database\n"
     "3. Modify database defaults\n4. Delete database\n5. Create table\n"
-    "6. List tables\n7. View table contents\n8. Add random integer rows\n0. Exit"
+    "6. List tables\n7. View table contents\n8. Add typed rows\n0. Exit"
 )
 
 
@@ -115,7 +116,7 @@ def create_table(db, tables):
 
 
 def add_random_rows(db, tables):
-    """Collect a row count and inclusive integer ranges for existing columns."""
+    """Collect numeric ranges and typed fixed values for existing columns."""
     database = read_existing_database(db)
     names = tables.list_tables(database)
     if not names:
@@ -125,26 +126,37 @@ def add_random_rows(db, tables):
     name = input("Table name: ").strip()
     if name not in names:
         raise ValueError("Choose an exact table name from the table list.")
-    columns = tables.list_columns(database, name)
-    print("Columns:\n" + "\n".join(columns))
+    columns = tables.column_types(database, name)
+    print("Columns:\n" + "\n".join(f"{column}: {kind}" for column, kind in columns.items()))
     count = int(input("Number of rows: ").strip())
     if count <= 0:
         raise ValueError("Number of rows must be positive.")
     ranges = {}
+    values = {}
     while True:
         column = input("Column to fill (blank to finish): ").strip()
         if not column:
             break
         if column not in columns:
             raise ValueError("Choose an exact column name from the column list.")
-        if column in ranges:
+        if column in ranges or column in values:
             raise ValueError("Each column can only be selected once.")
-        minimum = int(input(f"Minimum for {column}: ").strip())
-        maximum = int(input(f"Maximum for {column}: ").strip())
-        if minimum > maximum:
-            raise ValueError("Minimum must be less than or equal to maximum.")
-        ranges[column] = (minimum, maximum)
-    tables.insert_random_rows(database, name, count, ranges)
+        parser = ColumnValues(columns[column])
+        if parser.numeric:
+            minimum = parser.parse(input(f"Minimum for {column}: ").strip())
+            maximum = parser.parse(input(f"Maximum for {column}: ").strip())
+            parser.generator((minimum, maximum))
+            ranges[column] = (minimum, maximum)
+        else:
+            print("Enter a value repeated in every row (dates: YYYY-MM-DD; "
+                  "date/times: YYYY-MM-DD HH:MM:SS).")
+            value = input(f"Value for {column}: ")
+            parser.parse(value)
+            values[column] = value
+    if values:
+        tables.insert_random_rows(database, name, count, ranges, values=values)
+    else:
+        tables.insert_random_rows(database, name, count, ranges)
     print(f"Inserted {count} row(s) into '{database}.{name}'.")
 
 

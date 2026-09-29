@@ -1,7 +1,7 @@
 """Reusable table operations over a shared connection."""
 
 import re
-from random import randint
+from column_values import ColumnValues
 
 from validation import validate_identifier
 
@@ -27,30 +27,49 @@ class TableOperations:
         )
         return [row[0] for row in rows]
 
-    def insert_random_rows(self, database, name, count, ranges):
-        """Insert count rows using {column: (minimum, maximum)} integer ranges.
+    def column_types(self, database, name):
+        """Return column types, excluding generated columns that cannot be filled."""
+        validate_identifier(database)
+        validate_identifier(name)
+        rows = self.manager.execute(
+            f"SHOW COLUMNS FROM `{database}`.`{name}`", fetch=True,
+        )
+        return {row[0]: row[1] for row in rows
+                if len(row) < 6 or not any(marker in row[5].upper()
+                    for marker in ('VIRTUAL GENERATED', 'STORED GENERATED'))}
 
-        Both endpoints are inclusive; repeated values are possible. Omitted
-        columns use database defaults. The server checks types and constraints.
+    def insert_random_rows(self, database, name, count, ranges, values=None):
+        """Insert schema-validated numeric ranges and optional fixed values.
+
+        Ranges are inclusive. Omitted columns use server defaults; constraints
+        such as uniqueness are checked by the server.
         """
         validate_identifier(database, protect_system=True)
         validate_identifier(name)
         if type(count) is not int or count <= 0:
             raise ValueError("Number of rows must be a positive integer.")
-        if not isinstance(ranges, dict) or not ranges:
-            raise ValueError("Select at least one column and its integer range.")
+        values = {} if values is None else values
+        if not isinstance(ranges, dict) or not isinstance(values, dict) or not (ranges or values):
+            raise ValueError("Select at least one column to fill.")
         seen = set()
-        for column, bounds in ranges.items():
+        for column in [*ranges, *values]:
             validate_identifier(column)
             if column.lower() in seen:
                 raise ValueError("Column names must be unique regardless of case.")
             seen.add(column.lower())
-            if (not isinstance(bounds, (tuple, list)) or len(bounds) != 2
-                    or any(type(value) is not int for value in bounds)
-                    or bounds[0] > bounds[1]):
-                raise ValueError("Each range needs integer bounds with minimum <= maximum.")
+        types = self.column_types(database, name)
+        generators = {}
+        for column in [*ranges, *values]:
+            if column not in types:
+                raise ValueError(f"Unknown or generated column: {column}")
+            parser = ColumnValues(types[column])
+            if column in ranges:
+                generators[column] = parser.generator(ranges[column])
+            else:
+                value = parser.parse(values[column])
+                generators[column] = lambda value=value: value
         return self.insert_rows(database, name, [
-            {column: randint(*bounds) for column, bounds in ranges.items()}
+            {column: generate() for column, generate in generators.items()}
             for _ in range(count)
         ])
 

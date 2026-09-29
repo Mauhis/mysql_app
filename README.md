@@ -91,7 +91,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 5. Create table
 6. List tables
 7. View table contents
-8. Add random integer rows
+8. Add typed rows
 0. Exit
 ```
 
@@ -138,7 +138,7 @@ Connected successfully.
 5. Create table
 6. List tables
 7. View table contents
-8. Add random integer rows
+8. Add typed rows
 0. Exit
 Choose an option: 2
 New database name: demo_app
@@ -151,7 +151,7 @@ Database 'demo_app' created successfully.
 5. Create table
 6. List tables
 7. View table contents
-8. Add random integer rows
+8. Add typed rows
 0. Exit
 Choose an option: 0
 ```
@@ -340,24 +340,32 @@ Tests mock the connector and do not require a running MySQL server. See the
 This project's code is available under the [MIT License](LICENSE). Dependencies
 retain their own licenses.
 
-## Add random integer rows
+## Add typed rows
 
-Choose **8**, select an existing database and table, and enter the number of
-new rows (for example, `10`). The app lists the table's existing columns.
-Select `salary`, enter minimum `5000` and maximum `10000`, then leave the next
-column prompt blank to insert. You can select additional columns with their
-own ranges before finishing. No employee names or IDs are requested.
+Choose **8**, select an existing database and table, and enter the row count.
+The app displays column names and their actual MySQL types. Select columns to fill:
 
-Both endpoints are inclusive. Negative values and equal endpoints are allowed;
-values may repeat. This inserts new rows, rather than updating existing rows.
-Unselected columns must allow NULL, have defaults, or be auto-generated.
-The server checks column types, numeric limits, and uniqueness constraints.
-Use option 7 to view the results.
+- Integer columns accept inclusive whole-number minimum and maximum values.
+- FLOAT and DOUBLE columns accept fractional bounds.
+- DECIMAL columns accept bounds that fit their precision and scale; generated
+  values preserve the declared number of decimal places.
+- CHAR, VARCHAR and TEXT columns accept text repeated in each new row.
+- DATE accepts `YYYY-MM-DD`; DATETIME and TIMESTAMP accept
+  `YYYY-MM-DD HH:MM:SS`, repeated in each new row.
 
-Python example:
+Leave the column prompt blank to insert. Equal numeric bounds produce a fixed
+value. Values may repeat, so unique keys can still cause an insertion failure.
+Unsupported types are rejected. Generated columns are excluded; omit auto-increment
+columns to let the server populate them. Other omitted columns need defaults or
+must allow NULL. Server constraints, text byte limits, and temporal limits still
+apply. Use option 7 to view the inserted rows.
 
 ```python
-tables.insert_random_rows("demo_app", "employees", 10, {"salary": (5000, 10000)})
+tables.insert_random_rows(
+    "demo_app", "products", 10,
+    {"stock": (0, 100), "price": ("1.50", "99.99")},
+    values={"name": "Notebook"},
+)
 ```
 
 The batch uses parameterized SQL and one commit; failures roll back on
