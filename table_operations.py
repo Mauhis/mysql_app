@@ -38,8 +38,11 @@ class TableOperations:
                 if len(row) < 6 or not any(marker in row[5].upper()
                     for marker in ('VIRTUAL GENERATED', 'STORED GENERATED'))}
 
-    def insert_random_rows(self, database, name, count, ranges, values=None):
-        """Insert schema-validated numeric ranges and optional fixed values.
+    def insert_random_rows(self, database, name, count, ranges, values=None,
+                           *, row_values=None):
+        """Insert ranges, fixed values, and per-column lists of manual values.
+
+        Each row_values list must contain exactly count values, in row order.
 
         Ranges are inclusive. Omitted columns use server defaults; constraints
         such as uniqueness are checked by the server.
@@ -49,22 +52,30 @@ class TableOperations:
         if type(count) is not int or count <= 0:
             raise ValueError("Number of rows must be a positive integer.")
         values = {} if values is None else values
-        if not isinstance(ranges, dict) or not isinstance(values, dict) or not (ranges or values):
+        row_values = {} if row_values is None else row_values
+        if (not all(isinstance(mapping, dict) for mapping in (ranges, values, row_values))
+                or not (ranges or values or row_values)):
             raise ValueError("Select at least one column to fill.")
         seen = set()
-        for column in [*ranges, *values]:
+        for column in [*ranges, *values, *row_values]:
             validate_identifier(column)
             if column.lower() in seen:
                 raise ValueError("Column names must be unique regardless of case.")
             seen.add(column.lower())
         types = self.column_types(database, name)
         generators = {}
-        for column in [*ranges, *values]:
+        for column in [*ranges, *values, *row_values]:
             if column not in types:
                 raise ValueError(f"Unknown or generated column: {column}")
             parser = ColumnValues(types[column])
             if column in ranges:
                 generators[column] = parser.generator(ranges[column])
+            elif column in row_values:
+                entries = row_values[column]
+                if not isinstance(entries, (list, tuple)) or len(entries) != count:
+                    raise ValueError(f"Provide exactly {count} values for {column}.")
+                parsed = iter([parser.parse(value) for value in entries])
+                generators[column] = lambda parsed=parsed: next(parsed)
             else:
                 value = parser.parse(values[column])
                 generators[column] = lambda value=value: value
@@ -142,6 +153,30 @@ class TableOperations:
         definitions = self._column_definitions(columns)
         additions = ", ".join(f"ADD COLUMN {definition}" for definition in definitions)
         self.manager.execute(f"ALTER TABLE `{database}`.`{name}` {additions}")
+
+    def drop_columns(self, database, name, columns):
+        """Permanently remove a nonempty list/tuple of existing columns.
+
+        At least one column must remain. Dependencies and other constraints
+        are checked by the server. Schema changes take effect immediately.
+        """
+        validate_identifier(database, protect_system=True)
+        validate_identifier(name)
+        if not isinstance(columns, (list, tuple)) or not columns:
+            raise ValueError("Provide a nonempty list or tuple of column names.")
+        seen = set()
+        for column in columns:
+            validate_identifier(column)
+            if column.lower() in seen:
+                raise ValueError("Column names must be unique regardless of case.")
+            seen.add(column.lower())
+        existing = self.list_columns(database, name)
+        if any(column not in existing for column in columns):
+            raise ValueError("Choose exact column names from the column list.")
+        if len(columns) >= len(existing):
+            raise ValueError("At least one column must remain in the table.")
+        removals = ", ".join(f"DROP COLUMN `{column}`" for column in columns)
+        self.manager.execute(f"ALTER TABLE `{database}`.`{name}` {removals}")
 
     def insert_row(self, database, name, values):
         """Insert and commit one row from a nonempty column/value dictionary.

@@ -92,6 +92,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 6. List tables
 7. View table contents
 8. Add typed rows
+9. Modify table columns
 0. Exit
 ```
 
@@ -114,7 +115,7 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
   this option for tables small enough to display in your terminal.
 - **0 — Exit:** closes the connection and ends the program.
 
-Other choices print `Choose 1, 2, 3, 4, 5, 6, 7, 8, or 0.` and return to the menu. Operation errors
+Other choices print `Choose 1, 2, 3, 4, 5, 6, 7, 8, 9, or 0.` and return to the menu. Operation errors
 print `Operation failed:` and allow another choice. There is no automatic
 reconnect; if the connection is lost, exit and restart the application.
 
@@ -139,6 +140,7 @@ Connected successfully.
 6. List tables
 7. View table contents
 8. Add typed rows
+9. Modify table columns
 0. Exit
 Choose an option: 2
 New database name: demo_app
@@ -152,6 +154,7 @@ Database 'demo_app' created successfully.
 6. List tables
 7. View table contents
 8. Add typed rows
+9. Modify table columns
 0. Exit
 Choose an option: 0
 ```
@@ -343,7 +346,19 @@ retain their own licenses.
 ## Add typed rows
 
 Choose **8**, select an existing database and table, and enter the row count.
-The app displays column names and their actual MySQL types. Select columns to fill:
+The app displays column names and their actual MySQL types. Select a column,
+then choose `manual` to type a separate value for every row, `fixed` to repeat
+one value, or `range` for generated numeric values. Press Enter at the mode
+prompt to use `range` for numbers or `fixed` for other types.
+
+For example, to insert five names into a `VARCHAR` column, enter a row count of
+`5`, select `name`, and choose `manual`. Enter Alice, Bob, Carol, David, and Eve
+at the five numbered prompts, then leave the column prompt blank to insert.
+Invalid manual values prompt again for the same row. Text spacing is preserved.
+Multiple manual columns use the same row order and can be combined with fixed
+values and numeric ranges.
+
+Supported values:
 
 - Integer columns accept inclusive whole-number minimum and maximum values.
 - FLOAT and DOUBLE columns accept fractional bounds.
@@ -371,3 +386,41 @@ tables.insert_random_rows(
 The batch uses parameterized SQL and one commit; failures roll back on
 transactional tables such as InnoDB. `insert_rows()` and `insert_row()` remain
 available for inserting explicit values from Python.
+
+To provide individual column values from Python:
+
+```python
+tables.insert_random_rows(
+    "demo_app", "people", 5, {},
+    row_values={"name": ["Alice", "Bob", "Carol", "David", "Eve"]},
+)
+```
+
+Each `row_values` list or tuple must contain exactly the requested number of
+rows. All values are validated against the column type before insertion.
+
+## Modify existing table columns
+
+Choose **9 — Modify table columns**, select an existing database and table,
+then choose `add` or `remove`.
+
+- **add:** enter each new column name and its type (for example, `email` and
+  `VARCHAR(100)`). Leave the column prompt blank to apply the additions.
+- **remove:** select existing column names, leave the prompt blank, and type
+  `REMOVE` to permanently delete those columns and their stored data.
+
+An empty selection cancels. At least one column must remain. New columns use
+MySQL defaults; the same types as table creation are supported. Changes require
+ALTER permission and take effect immediately. The server checks dependencies
+and constraints; errors return to the menu.
+
+Python API (no interactive confirmation):
+
+```python
+tables.add_columns("demo_app", "people", {"email": "VARCHAR(100)", "age": "INT"})
+tables.drop_columns("demo_app", "people", ["email", "age"])
+```
+
+`drop_columns()` accepts a nonempty list or tuple of exact existing names.
+Both methods validate identifiers, reject duplicate names regardless of case,
+and protect system databases. Each call executes one ALTER TABLE statement.

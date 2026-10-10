@@ -263,3 +263,39 @@ Database and table methods have moved off `ConnectionManager`. Existing callers
 should construct `DatabaseOperations(manager)` and `TableOperations(manager)` and
 call the corresponding methods there, as in the example above. Connection setup
 and cleanup remain on the manager. The interactive menu is unchanged.
+
+### Manual column values
+
+`TableOperations.insert_random_rows(database, name, count, ranges, values=None,
+*, row_values=None)` accepts per-column lists or tuples through `row_values`.
+Each sequence must have exactly `count` entries in row order. Columns cannot
+appear in more than one of `ranges`, `values`, and `row_values`. All manual
+entries are parsed against the schema before the batch is inserted.
+CLI option 8 offers `manual`, `fixed`, and (for numeric columns) `range` modes.
+Manual input retries invalid values at the current row.
+
+## Modify existing table columns
+
+Choose **9 — Modify table columns**, select an existing database and table,
+then choose `add` or `remove`.
+
+- **add:** enter each new column name and its type (for example, `email` and
+  `VARCHAR(100)`). Leave the column prompt blank to apply the additions.
+- **remove:** select existing column names, leave the prompt blank, and type
+  `REMOVE` to permanently delete those columns and their stored data.
+
+An empty selection cancels. At least one column must remain. New columns use
+MySQL defaults; the same types as table creation are supported. Changes require
+ALTER permission and take effect immediately. The server checks dependencies
+and constraints; errors return to the menu.
+
+Python API (no interactive confirmation):
+
+```python
+tables.add_columns("demo_app", "people", {"email": "VARCHAR(100)", "age": "INT"})
+tables.drop_columns("demo_app", "people", ["email", "age"])
+```
+
+`drop_columns()` accepts a nonempty list or tuple of exact existing names.
+Both methods validate identifiers, reject duplicate names regardless of case,
+and protect system databases. Each call executes one ALTER TABLE statement.

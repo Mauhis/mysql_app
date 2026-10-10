@@ -86,19 +86,19 @@ class InputTests(unittest.TestCase):
             handle_menu_choice(self.db, self.tables, '8')
 
     def test_salary_only(self):
-        self.run_input(['10', 'salary', '5000', '10000', ''])
+        self.run_input(['10', 'salary', '', '5000', '10000', ''])
         self.tables.insert_random_rows.assert_called_once_with(
             'demo', 'staff', 10, {'salary': (5000, 10000)})
 
     def test_multiple_columns(self):
-        self.run_input(['10', 'salary', '-10', '10', 'age', '20', '60', ''])
+        self.run_input(['10', 'salary', '', '-10', '10', 'age', '', '20', '60', ''])
         self.tables.insert_random_rows.assert_called_once_with(
             'demo', 'staff', 10, {'salary': (-10, 10), 'age': (20, 60)})
 
     def test_invalid_input_never_inserts(self):
         for answers in (['0'], ['abc'], ['1', 'missing'],
-                        ['1', 'salary', '10', '5'], ['1', 'salary', 'abc'],
-                        ['1', 'salary', '1', '2', 'salary']):
+                        ['1', 'salary', '', '10', '5'], ['1', 'salary', '', 'abc'],
+                        ['1', 'salary', '', '1', '2', 'salary']):
             with self.subTest(answers=answers), self.assertRaises(ValueError):
                 self.run_input(answers)
         self.tables.insert_random_rows.assert_not_called()
@@ -158,10 +158,56 @@ class TypedRowsTests(unittest.TestCase):
         tables = MagicMock(spec=TableOperations)
         tables.list_tables.return_value = ['items']
         tables.column_types.return_value = {'price': 'decimal(5,2)', 'name': 'text'}
-        answers = ['demo', 'items', '3', 'price', '1.25', '2.50', 'name', 'Book', '']
+        answers = ['demo', 'items', '3', 'price', '', '1.25', '2.50', 'name', '', 'Book', '']
         with patch('builtins.input', side_effect=answers), patch('builtins.print'):
             handle_menu_choice(db, tables, '8')
         from decimal import Decimal
         tables.insert_random_rows.assert_called_once_with(
             'demo', 'items', 3, {'price': (Decimal('1.25'), Decimal('2.50'))},
             values={'name': 'Book'})
+
+
+class ManualRowsTests(unittest.TestCase):
+    def test_manual_values_mix_with_ranges_and_fixed_values(self):
+        manager = MagicMock()
+        manager.execute.return_value = [('name', 'varchar(30)'), ('age', 'int'),
+                                        ('label', 'text'), ('score', 'int')]
+        tables = TableOperations(manager)
+        tables.insert_random_rows('demo', 'staff', 2, {'score': (7, 7)},
+                                  values={'label': 'new'},
+                                  row_values={'name': ["O'Reilly", ' Ann '],
+                                              'age': ['21', '32']})
+        self.assertEqual(manager.execute.call_args.kwargs['params'],
+                         (7, 'new', "O'Reilly", 21, 7, 'new', ' Ann ', 32))
+
+    def test_invalid_manual_values_never_insert(self):
+        for entries in (['Ann'], ['Ann', 'Bob', 'Cat'], 'Ann', ['Ann', 'Too long']):
+            with self.subTest(entries=entries):
+                manager = MagicMock()
+                manager.execute.return_value = [('name', 'varchar(3)')]
+                with self.assertRaises(ValueError):
+                    TableOperations(manager).insert_random_rows(
+                        'demo', 'staff', 2, {}, row_values={'name': entries})
+                self.assertFalse(any(call.args[0].startswith('INSERT')
+                                     for call in manager.execute.call_args_list))
+
+    def test_duplicate_modes_rejected(self):
+        with self.assertRaises(ValueError):
+            TableOperations(MagicMock()).insert_random_rows(
+                'demo', 'staff', 1, {}, values={'name': 'Ann'},
+                row_values={'name': ['Bob']})
+
+    def test_cli_five_names_retries_invalid_value(self):
+        db = MagicMock()
+        db.list_databases.return_value = ['demo']
+        tables = MagicMock(spec=TableOperations)
+        tables.list_tables.return_value = ['staff']
+        tables.column_types.return_value = {'name': 'varchar(5)'}
+        names = ['Alice', 'Bob', 'Carol', 'David', 'Eve']
+        answers = ['demo', 'staff', '5', 'name', 'manual', 'Too long', *names, '']
+        with patch('builtins.input', side_effect=answers) as prompt, patch('builtins.print'):
+            handle_menu_choice(db, tables, '8')
+        tables.insert_random_rows.assert_called_once_with(
+            'demo', 'staff', 5, {}, values={}, row_values={'name': names})
+        self.assertEqual(sum('row 1/5' in call.args[0]
+                             for call in prompt.call_args_list), 2)

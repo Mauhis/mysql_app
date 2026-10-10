@@ -14,7 +14,7 @@ from column_values import ColumnValues
 MENU = (
     "\n1. List databases\n2. Create database\n"
     "3. Modify database defaults\n4. Delete database\n5. Create table\n"
-    "6. List tables\n7. View table contents\n8. Add typed rows\n0. Exit"
+    "6. List tables\n7. View table contents\n8. Add typed rows\n9. Modify table columns\n0. Exit"
 )
 
 
@@ -115,8 +115,65 @@ def create_table(db, tables):
     print(f"Table '{database}.{name}' created successfully.")
 
 
+def modify_table(db, tables):
+    """Add or remove columns on a selected existing table."""
+    database = read_existing_database(db)
+    names = tables.list_tables(database)
+    if not names:
+        print("No tables visible. Create a table first with option 5.")
+        return
+    print("Tables:\n" + "\n".join(names))
+    name = input("Table name: ").strip()
+    if name not in names:
+        raise ValueError("Choose an exact table name from the table list.")
+    existing = tables.list_columns(database, name)
+    print("Columns:\n" + "\n".join(existing))
+    action = input("Column action (add/remove, blank to cancel): ").strip().lower()
+    if not action:
+        print("Modification cancelled.")
+        return
+    if action not in {'add', 'remove'}:
+        raise ValueError("Choose add or remove.")
+    additions = {}
+    removals = []
+    if action == 'add':
+        print("Types: INT, BIGINT, FLOAT, DOUBLE, BOOLEAN, DATE, DATETIME, "
+              "TIMESTAMP, TEXT, VARCHAR(n), DECIMAL(p, s).")
+    while True:
+        column = input(f"Column to {action} (blank to finish): ").strip()
+        if not column:
+            break
+        validate_identifier(column)
+        selected = additions if action == 'add' else removals
+        if column.lower() in {value.lower() for value in selected}:
+            raise ValueError("Each column can only be selected once.")
+        if action == 'add':
+            if column.lower() in {value.lower() for value in existing}:
+                raise ValueError("This column already exists.")
+            additions[column] = input("Column type: ").strip()
+        else:
+            if column not in existing:
+                raise ValueError("Choose an exact column name from the column list.")
+            removals.append(column)
+    if not additions and not removals:
+        print("No columns selected. Modification cancelled.")
+        return
+    if action == 'add':
+        tables.add_columns(database, name, additions)
+    else:
+        if len(removals) >= len(existing):
+            raise ValueError("At least one column must remain in the table.")
+        print(f"Permanently remove columns {', '.join(removals)} from "
+              f"'{database}.{name}', including their stored data.")
+        if input("Type REMOVE to apply, or anything else to cancel: ") != 'REMOVE':
+            print("Modification cancelled.")
+            return
+        tables.drop_columns(database, name, removals)
+    print(f"Table '{database}.{name}' updated successfully.")
+
+
 def add_random_rows(db, tables):
-    """Collect numeric ranges and typed fixed values for existing columns."""
+    """Collect generated, repeated, or manually entered column values."""
     database = read_existing_database(db)
     names = tables.list_tables(database)
     if not names:
@@ -133,16 +190,39 @@ def add_random_rows(db, tables):
         raise ValueError("Number of rows must be positive.")
     ranges = {}
     values = {}
+    row_values = {}
     while True:
         column = input("Column to fill (blank to finish): ").strip()
         if not column:
             break
         if column not in columns:
             raise ValueError("Choose an exact column name from the column list.")
-        if column in ranges or column in values:
+        if column in ranges or column in values or column in row_values:
             raise ValueError("Each column can only be selected once.")
         parser = ColumnValues(columns[column])
-        if parser.numeric:
+        default_mode = 'range' if parser.numeric else 'fixed'
+        modes = {'manual', 'fixed', 'range'} if parser.numeric else {'manual', 'fixed'}
+        while True:
+            mode = input(
+                f"Fill mode for {column} ({'/'.join(sorted(modes))}) [{default_mode}]: "
+            ).strip().lower() or default_mode
+            if mode in modes:
+                break
+            print("Choose one of: " + ", ".join(sorted(modes)))
+        if mode == 'manual':
+            entries = []
+            for index in range(count):
+                while True:
+                    value = input(f"Value for {column}, row {index + 1}/{count}: ")
+                    try:
+                        parser.parse(value)
+                    except ValueError as error:
+                        print(f"Invalid value: {error}")
+                    else:
+                        entries.append(value)
+                        break
+            row_values[column] = entries
+        elif mode == 'range':
             minimum = parser.parse(input(f"Minimum for {column}: ").strip())
             maximum = parser.parse(input(f"Maximum for {column}: ").strip())
             parser.generator((minimum, maximum))
@@ -153,7 +233,10 @@ def add_random_rows(db, tables):
             value = input(f"Value for {column}: ")
             parser.parse(value)
             values[column] = value
-    if values:
+    if row_values:
+        tables.insert_random_rows(database, name, count, ranges,
+                                  values=values, row_values=row_values)
+    elif values:
         tables.insert_random_rows(database, name, count, ranges, values=values)
     else:
         tables.insert_random_rows(database, name, count, ranges)
@@ -208,12 +291,13 @@ def handle_menu_choice(db, tables, choice):
         "6": lambda db: list_tables(db, tables),
         "7": lambda db: view_table(db, tables),
         "8": lambda db: add_random_rows(db, tables),
+        "9": lambda db: modify_table(db, tables),
     }
     if choice == "0":
         return False
     action = actions.get(choice)
     if action is None:
-        print("Choose 1, 2, 3, 4, 5, 6, 7, 8, or 0.")
+        print("Choose 1, 2, 3, 4, 5, 6, 7, 8, 9, or 0.")
     else:
         action(db)
     return True
