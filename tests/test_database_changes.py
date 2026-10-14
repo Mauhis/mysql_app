@@ -65,7 +65,7 @@ class MenuChangeTests(unittest.TestCase):
     def run_menu(self, answers):
         with patch('cli.ConnectionManager') as manager_class, \
                 patch('cli.DatabaseOperations') as database_class, \
-                patch('builtins.input', side_effect=['', '', '', *answers]), \
+                patch('builtins.input', side_effect=['', '', '', '1', *answers, '0']), \
                 patch('cli.getpass', return_value='secret'), patch('builtins.print'):
             manager = manager_class.return_value
             database_class.return_value.list_databases.return_value = ['example']

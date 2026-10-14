@@ -131,7 +131,7 @@ class TableCreationTests(unittest.TestCase):
         databases = MagicMock(spec=DatabaseOperations)
         tables = MagicMock(spec=TableOperations)
         databases.list_databases.return_value = ["example"]
-        answers = ["5", "example", "items", "id", "INT", "", "id", "0"]
+        answers = ["2", "5", "example", "items", "id", "INT", "", "id", "0", "0"]
         with patch("builtins.input", side_effect=answers), patch("builtins.print"):
             run_menu(databases, tables)
         tables.create_table.assert_called_once_with(
@@ -142,7 +142,7 @@ class TableCreationTests(unittest.TestCase):
         self.cursor.execute.side_effect = mysql.connector.Error("Table already exists")
         with patch.object(self.databases, "list_databases", return_value=["example"]), \
                 patch("builtins.input", side_effect=[
-                    "5", "example", "items", "id", "INT", "", "", "0"
+                    "2", "5", "example", "items", "id", "INT", "", "", "0", "0"
                 ]), patch("builtins.print") as output:
             run_menu(self.databases, self.tables)
         output.assert_any_call("Operation failed: Table already exists")

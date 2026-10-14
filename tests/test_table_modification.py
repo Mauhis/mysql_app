@@ -99,7 +99,7 @@ class ModifyTableInputTests(unittest.TestCase):
     def test_menu_recovers_from_alter_error(self):
         self.tables.add_columns.side_effect = mysql.connector.Error('ALTER denied')
         with patch('builtins.input', side_effect=[
-            '9', 'demo', 'people', 'add', 'email', 'TEXT', '', '0'
+            '2', '9', 'demo', 'people', 'add', 'email', 'TEXT', '', '0', '0'
         ]), patch('builtins.print') as output:
             run_menu(self.db, self.tables)
         output.assert_any_call('Operation failed: ALTER denied')

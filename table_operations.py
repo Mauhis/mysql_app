@@ -178,6 +178,43 @@ class TableOperations:
         removals = ", ".join(f"DROP COLUMN `{column}`" for column in columns)
         self.manager.execute(f"ALTER TABLE `{database}`.`{name}` {removals}")
 
+    def primary_key_columns(self, database, name):
+        """Return columns that uniquely identify an existing row."""
+        validate_identifier(database)
+        validate_identifier(name)
+        rows = self.manager.execute(
+            f"SHOW COLUMNS FROM `{database}`.`{name}`", fetch=True,
+        )
+        return [row[0] for row in rows if row[3] == 'PRI']
+
+    def update_row(self, database, name, key_values, values):
+        """Update one row by its complete primary key, preserving other columns."""
+        validate_identifier(database, protect_system=True)
+        validate_identifier(name)
+        for mapping in (key_values, values):
+            if not isinstance(mapping, dict) or not mapping:
+                raise ValueError("Provide nonempty dictionaries of keys and values.")
+            for column in mapping:
+                validate_identifier(column)
+        keys = self.primary_key_columns(database, name)
+        if not keys or set(key_values) != set(keys):
+            raise ValueError("Updating requires the table's complete primary key.")
+        if any(value is None for value in key_values.values()):
+            raise ValueError("Primary key values cannot be NULL.")
+        types = self.column_types(database, name)
+        parsed = {}
+        for column, value in values.items():
+            if column not in types:
+                raise ValueError(f"Unknown or generated column: {column}")
+            parsed[column] = None if value is None else ColumnValues(types[column]).parse(value)
+        assignments = ', '.join(f"`{column}` = %s" for column in parsed)
+        condition = ' AND '.join(f"`{column}` = %s" for column in keys)
+        self.manager.execute(
+            f"UPDATE `{database}`.`{name}` SET {assignments} WHERE {condition}",
+            params=(*parsed.values(), *(key_values[column] for column in keys)),
+            commit=True,
+        )
+
     def insert_row(self, database, name, values):
         """Insert and commit one row from a nonempty column/value dictionary.
 

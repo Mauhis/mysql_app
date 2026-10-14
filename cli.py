@@ -12,9 +12,16 @@ from column_values import ColumnValues
 
 
 MENU = (
-    "\n1. List databases\n2. Create database\n"
-    "3. Modify database defaults\n4. Delete database\n5. Create table\n"
-    "6. List tables\n7. View table contents\n8. Add typed rows\n9. Modify table columns\n0. Exit"
+    "\nMain menu\n1. Database actions\n2. Table actions\n0. Exit"
+)
+DATABASE_MENU = (
+    "\nDatabase actions\n1. List databases\n2. Create database\n"
+    "3. Modify database defaults\n4. Delete database\n0. Return to main menu"
+)
+TABLE_MENU = (
+    "\nTable actions\n5. Create table\n"
+    "6. List tables\n7. View table contents\n8. Add typed rows\n9. Modify table columns\n"
+    "10. Edit existing row values\n0. Return to main menu"
 )
 
 
@@ -243,6 +250,57 @@ def add_random_rows(db, tables):
     print(f"Inserted {count} row(s) into '{database}.{name}'.")
 
 
+def edit_row_values(db, tables):
+    """Select a column and enter its value for each existing row."""
+    database = read_existing_database(db)
+    names = tables.list_tables(database)
+    if not names:
+        print("No tables visible. Create a table first with option 5.")
+        return
+    print("Tables:\n" + "\n".join(names))
+    name = input("Table name: ").strip()
+    if name not in names:
+        raise ValueError("Choose an exact table name from the table list.")
+    keys = tables.primary_key_columns(database, name)
+    if not keys:
+        raise ValueError("Editing existing rows requires a table with a primary key.")
+    types = tables.column_types(database, name)
+    while True:
+        columns, rows = tables.read_table(database, name)
+        if not rows:
+            print("Table is empty. Add rows first with option 8.")
+            return
+        print("Editable columns:\n" + '\n'.join(
+            f"{column}: {kind}" for column, kind in types.items()))
+        column = input("Column to change (blank to finish): ").strip()
+        if not column:
+            return
+        if column not in types:
+            print("Choose an exact name from the editable column list.")
+            continue
+        parser = ColumnValues(types[column])
+        print("Enter a new value for each row, or leave blank to keep its current value.")
+        saved = 0
+        for index, row in enumerate(rows, 1):
+            current = dict(zip(columns, row))
+            print(f"Row {index}/{len(rows)}: " + ', '.join(
+                f"{name}={value!r}" for name, value in current.items()))
+            while True:
+                value = input(f"New value for {column} (blank to keep): ")
+                if value == '':
+                    break
+                try:
+                    parsed = parser.parse(value)
+                except ValueError as error:
+                    print(f"Invalid value: {error}")
+                    continue
+                tables.update_row(database, name,
+                                  {key: current[key] for key in keys}, {column: parsed})
+                saved += 1
+                break
+        print(f"Saved '{column}' values for {saved} row(s) in '{database}.{name}'.")
+
+
 def modify_database(db):
     """Prompt for, confirm, and update a database's defaults."""
     name = read_existing_database(db)
@@ -292,25 +350,41 @@ def handle_menu_choice(db, tables, choice):
         "7": lambda db: view_table(db, tables),
         "8": lambda db: add_random_rows(db, tables),
         "9": lambda db: modify_table(db, tables),
+        "10": lambda db: edit_row_values(db, tables),
     }
     if choice == "0":
         return False
     action = actions.get(choice)
     if action is None:
-        print("Choose 1, 2, 3, 4, 5, 6, 7, 8, 9, or 0.")
+        print("Choose 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, or 0.")
     else:
         action(db)
     return True
 
 
 def run_menu(db, tables):
-    """Run menu actions until the user chooses to exit."""
+    """Navigate database and table sections until the user exits."""
+    section = None
     while True:
-        print(MENU)
+        print({None: MENU, '1': DATABASE_MENU, '2': TABLE_MENU}[section])
         choice = input("Choose an option: ").strip()
-        try:
-            if not handle_menu_choice(db, tables, choice):
+        if choice == '0':
+            if section is None:
                 return
+            section = None
+            continue
+        if section is None:
+            if choice in {'1', '2'}:
+                section = choice
+            else:
+                print("Choose 1, 2, or 0.")
+            continue
+        allowed = {'1', '2', '3', '4'} if section == '1' else {'5', '6', '7', '8', '9', '10'}
+        if choice not in allowed:
+            print("Choose an option from this section, or 0 to return to the main menu.")
+            continue
+        try:
+            handle_menu_choice(db, tables, choice)
         except (ValueError, RuntimeError, mysql.connector.Error) as err:
             print(f"Operation failed: {err}")
 

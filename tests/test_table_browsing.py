@@ -57,7 +57,7 @@ class TableBrowsingTests(unittest.TestCase):
         tables.list_tables.return_value = names
         tables.read_table.return_value = result
         tables.read_table.side_effect = error
-        with patch('builtins.input', side_effect=answers), patch('builtins.print') as output:
+        with patch('builtins.input', side_effect=['2', *answers, '0']), patch('builtins.print') as output:
             run_menu(db, tables)
         return tables, '\n'.join(str(c.args[0]) for c in output.call_args_list)
 

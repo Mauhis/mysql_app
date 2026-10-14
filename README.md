@@ -1,5 +1,11 @@
 # MySQL Database Creator
 
+This project was developed solely using AI for experimental purposes.
+
+Its main purpose is to provide a quick way to create MySQL databases, tables,
+and sample data that recreate the database examples given in LeetCode SQL
+questions, so you can practice solving them locally.
+
 An interactive Python command-line application for connecting to an existing
 MySQL server, listing visible databases, creating empty databases, changing database defaults,
 deleting databases, creating tables, and browsing table contents.
@@ -12,6 +18,7 @@ deleting databases, creating tables, and browsing table contents.
 - [Database names and creation behavior](#database-names-and-creation-behavior)
 - [Modify or delete existing databases](#modify-or-delete-existing-databases)
 - [Create tables](#create-tables)
+- [Edit existing row values](#edit-existing-row-values)
 - [Use the classes in Python](#use-the-classes-in-python)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Developer guide and API reference](docs/development.md)
@@ -83,17 +90,35 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
 
 ### Choose an operation
 
+The main menu separates operations into two sections:
+
 ```text
+Main menu
+1. Database actions
+2. Table actions
+0. Exit
+```
+
+Choose **1** for database operations or **2** for table operations. After each
+operation you remain in its section. Choose **0** within either section to
+return to the main menu, where you can switch sections or exit.
+
+```text
+Database actions
 1. List databases
 2. Create database
 3. Modify database defaults
 4. Delete database
+0. Return to main menu
+
+Table actions
 5. Create table
 6. List tables
 7. View table contents
 8. Add typed rows
 9. Modify table columns
-0. Exit
+10. Edit existing row values
+0. Return to main menu
 ```
 
 - **1 — List databases:** prints one visible database name per line. Visibility
@@ -113,9 +138,12 @@ than those in `ConnectionManager.connect()` use the connector's defaults.
   are reported explicitly. SQL NULL prints as `NULL`; text values are quoted.
   Reading requires SELECT permission. All rows are loaded into memory, so use
   this option for tables small enough to display in your terminal.
-- **0 — Exit:** closes the connection and ends the program.
+- **10 — Edit existing row values:** selects a column and prompts for its value
+  in each existing row, including newly added columns. Requires a primary key.
+- **0:** returns to the main menu from a section; exits and closes the connection
+  when selected at the main menu.
 
-Other choices print `Choose 1, 2, 3, 4, 5, 6, 7, 8, 9, or 0.` and return to the menu. Operation errors
+Invalid choices show a prompt and keep you in the current menu. Operation errors
 print `Operation failed:` and allow another choice. There is no automatic
 reconnect; if the connection is lost, exit and restart the application.
 
@@ -132,29 +160,33 @@ Username [root]: db_creator
 Password:
 Connected successfully.
 
+Main menu
+1. Database actions
+2. Table actions
+0. Exit
+Choose an option: 1
+
+Database actions
 1. List databases
 2. Create database
 3. Modify database defaults
 4. Delete database
-5. Create table
-6. List tables
-7. View table contents
-8. Add typed rows
-9. Modify table columns
-0. Exit
+0. Return to main menu
 Choose an option: 2
 New database name: demo_app
 Database 'demo_app' created successfully.
 
+Database actions
 1. List databases
 2. Create database
 3. Modify database defaults
 4. Delete database
-5. Create table
-6. List tables
-7. View table contents
-8. Add typed rows
-9. Modify table columns
+0. Return to main menu
+Choose an option: 0
+
+Main menu
+1. Database actions
+2. Table actions
 0. Exit
 Choose an option: 0
 ```
@@ -345,6 +377,9 @@ retain their own licenses.
 
 ## Add typed rows
 
+This option inserts new rows. To fill a newly added column in rows that already
+exist, use **10 — Edit existing row values** instead.
+
 Choose **8**, select an existing database and table, and enter the row count.
 The app displays column names and their actual MySQL types. Select a column,
 then choose `manual` to type a separate value for every row, `fixed` to repeat
@@ -424,3 +459,21 @@ tables.drop_columns("demo_app", "people", ["email", "age"])
 `drop_columns()` accepts a nonempty list or tuple of exact existing names.
 Both methods validate identifiers, reject duplicate names regardless of case,
 and protect system databases. Each call executes one ALTER TABLE statement.
+
+## Edit existing row values
+
+Choose **10**, select a database and table, then choose the column to change.
+The app displays each existing row and asks for that column's new value.
+Leave a value blank to keep the current value for that row. Each entered value
+is saved immediately. After going through the rows, choose another column or
+leave the column prompt blank to return to the menu. This fills newly added
+columns or changes existing values while preserving other columns and the row count.
+
+The table must have a primary key (including composite keys) so each update
+identifies a single row. Values are validated against their column types, and
+generated columns cannot be edited. Updates require UPDATE permission; server
+constraints still apply. Each saved row is committed separately.
+
+```python
+tables.update_row("demo_app", "people", {"id": 1}, {"age": 32})
+```
