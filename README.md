@@ -6,7 +6,7 @@ Its main purpose is to provide a quick way to create MySQL databases, tables,
 and sample data that recreate the database examples given in LeetCode SQL
 questions, so you can practice solving them locally.
 
-An interactive Python command-line application for connecting to an existing
+A Python desktop and command-line application for connecting to an existing
 MySQL server, listing visible databases, creating empty databases, changing database defaults,
 deleting databases, creating tables, and browsing table contents.
 
@@ -36,7 +36,7 @@ deleting databases, creating tables, and browsing table contents.
 
 The application does not install or start MySQL. It creates databases and tables;
 The Python API also adds columns and inserts rows; it does not run migrations or rename databases.
-There is no graphical interface or web server.
+The desktop interface uses Tkinter; the terminal interface remains available with `--cli`.
 
 ## Installation
 
@@ -64,7 +64,36 @@ py -3 -m venv .venv
 For later sessions on Linux or macOS, run `.venv/bin/python main.py` from the
 project directory, or activate the environment again and run `python main.py`.
 
-## Usage
+## Desktop interface
+
+Run `python main.py` to open the desktop window. Enter the MySQL connection
+settings and click **Connect**. Select a database to see its tables, then select
+a table to browse its data.
+
+- **New database** creates and selects a practice database.
+- **Create table** accepts a table name and column definitions such as
+  `id:INT; name:VARCHAR(100); price:DECIMAL(10, 2)`, plus an optional primary key.
+- **Add row** accepts typed values; blank fields use server defaults.
+- **Edit selected row** (or double-click a row) changes its values. A primary key
+  is required; unchanged fields are preserved.
+- **Add column** adds a column to the selected table. Use row editing to fill it.
+- **Delete column** selects an existing column and asks for confirmation before
+  permanently removing it and its values. At least one column must remain;
+  server dependencies may prevent deletion. Requires ALTER permission.
+- **Refresh** reloads the database and table lists.
+
+Database calls run in the background. The grid loads all rows, so this interface
+is intended for small practice datasets. Row dialogs support the same value types
+as the terminal interface; they do not currently provide an explicit SQL NULL input.
+
+Tkinter is included with many Python installations. On Debian/Ubuntu, install
+`python3-tk` if it is missing. To use the terminal interface instead, run:
+
+```bash
+python main.py --cli
+```
+
+## Usage (terminal interface)
 
 ### Connect to a server
 
@@ -348,7 +377,8 @@ mysql_app/
 ├── table_operations.py            # TableOperations
 ├── validation.py                  # Shared SQL name validation
 ├── cli.py                         # Interactive prompts and menu workflow
-├── main.py                        # Minimal executable entry point
+├── desktop.py                     # Tkinter desktop interface
+├── main.py                        # Desktop entry point; --cli for terminal mode
 ├── requirements.txt               # MySQL connector dependency range
 ├── tests/
 │   ├── test_connection_manager.py
